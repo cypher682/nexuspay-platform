@@ -27,6 +27,7 @@ const envSchema = z.object({
   AUTH_ISSUER: z.string().default("NexusPay"),
   PAYMENT_PROCESSING_TTL_SECONDS: z.coerce.number().int().positive().default(30),
   PROVIDER_WEBHOOK_SECRET: z.string().min(16),
+  PROVIDER_SUCCESS_RATE: z.coerce.number().min(0).max(1).default(0.9),
   RECONCILIATION_TOLERANCE_MINOR: z.coerce.number().int().min(0).default(0)
 });
 

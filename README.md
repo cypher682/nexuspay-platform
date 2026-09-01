@@ -14,46 +14,50 @@
 
 Production-grade fintech platform built as a self-contained lab product to practice
 real-world DevOps, cloud, infrastructure, and security engineering. Four
-Node.js/TypeScript microservices behind an API gateway — with GitOps, container
-security, API contract validation, and load testing — everything running locally
+Node.js/TypeScript microservices behind an API gateway - with GitOps, container
+security, API contract validation, and load testing - everything running locally
 on Docker Desktop and minikube at **zero cloud spend**.
 
 ## What it is
 
 NexusPay is a payment platform featuring:
 
-- **JWT Auth & IAM** — Refresh-token rotation (family reuse detection), TOTP MFA, RBAC scopes, and brute-force lockout.
-- **Idempotent Payments** — Double-entry ledger, payment state machine, HMAC-verified provider webhooks, and reconciliation.
-- **Async Notifications** — Multi-channel (email/SMS) via RabbitMQ with templates, delivery tracking, and dead-letter retries.
-- **API Gateway** — JWT validation, Redis sliding-window rate limiting, downstream circuit breaker, and correlated request IDs.
+- **JWT Auth & IAM** - Refresh-token rotation (family reuse detection), TOTP MFA, RBAC scopes, and brute-force lockout.
+- **Idempotent Payments** - Double-entry ledger, payment state machine, HMAC-verified provider webhooks, and reconciliation. A configurable-rate mock provider exercises the full lifecycle without a real gateway (set `PROVIDER_SUCCESS_RATE` to tune the simulated decline rate).
+- **Async Notifications** - Multi-channel (email/SMS) via RabbitMQ with templates, delivery tracking, and dead-letter retries.
+- **API Gateway** - JWT validation, Redis sliding-window rate limiting, downstream circuit breaker, and correlated request IDs.
 
 > Monetary amounts are stored as **integer minor units** (kobo/cents). No floats anywhere.
 
 ## Architecture
 
 ```
-                        ┌────────────────────┐
-  Clients ──────────────►   api-gateway      │ :4000
-                        │  JWT validation    │
-                        │  rate limiting     │──┐
-                        │  routing           │  │ Redis (rate limits,
-                        └─────────┬──────────┘  │  correlation IDs)
-                                  │             ▼
-        ┌─────────────────────────┼──────────────────────┐
-        ▼                         ▼                      ▼
-┌────────────────┐      ┌──────────────────┐    ┌─────────────────────┐
-│ auth-service   │      │ payments-service │    │ notifications-svc   │
-│ :4001          │      │ :4002            │    │ :4003               │
-│ JWT + rotation │      │ Idempotent       │    │ Template engine     │
-│ TOTP MFA       │◄─────│ payment lifecycle│───►│ Email/SMS senders   │
-│ RBAC + audit   │verify│ Ledger entries   │    │ RabbitMQ consumer   │
-└───────┬────────┘      │ Inbound webhooks │    └──────────┬──────────┘
-        ▼               └───────┬──────────┘               ▼
-  nexuspay_auth                 ▼                    nexuspay_notifications
-  (PostgreSQL)         nexuspay_payments              (PostgreSQL)
-                        (PostgreSQL)
+                        +------------------------+
+  Clients -------------> api-gateway     :4000   |
+                        | JWT validation        |
+                        | rate limiting         +-- Redis (rate limits,
+                        | routing, circuit      |   correlation IDs)
+                        +-----------+-----------+
+                                    |
+          +-------------------------+--------------------------+
+          v                         v                          v
++-------------------+      +---------------------+      +------------------------+
+| auth-service      |      | payments-service    |      | notifications-service  |
+| :4001             |      | :4002               |      | :4003                  |
+| JWT + rotation    |<+--->| Idempotent lifecycle|----->| Template engine        |
+| TOTP MFA          | Auth | Ledger entries      |      | Email/SMS senders      |
+| RBAC + audit      |      | Inbound webhooks    |      | RabbitMQ consumer      |
++---------+---------+      +----------+----------+      +-----------+------------+
+          |                          |                             |
+          v                          v                             v
+   nexuspay_auth              nexuspay_payments            nexuspay_notifications
+   (PostgreSQL)               (PostgreSQL)                 (PostgreSQL)
 
-Shared: PostgreSQL 16 · Redis 7 · RabbitMQ 3.13
+auth-service verifies identities and RBAC; payment events
+(payment.succeeded/failed) fan out via RabbitMQ so notifications-service
+enqueues receipt/status emails. All requests enter through the gateway.
+
+Shared: PostgreSQL 16 | Redis 7 | RabbitMQ 3.13
 ```
 
 ## Services
@@ -67,32 +71,32 @@ Shared: PostgreSQL 16 · Redis 7 · RabbitMQ 3.13
 
 All services: TypeScript, Express 5, Prisma ORM, Zod validation, Winston structured logs, Jest tests, multi-stage Docker builds, health/readiness probes, non-root runtime user, BuildKit cache mounts, and committed lockfiles (`npm ci` builds).
 
-> **Networking note:** in `docker-compose.yml` the gateway is the only HTTP entrypoint published to the host (`localhost:4000`). `auth-service`, `payments-service` and `notifications-service` are only reachable on the internal Docker network. Infrastructure (Postgres `5433`, Redis `6379`, RabbitMQ `5672`/`15672`, Mailpit `1025`/`8025`, Grafana, Prometheus, Jaeger, Loki) is published for local inspection. The dev credentials in the compose file (`nexuspay/nexuspay`, Grafana `admin/admin`) are local-only defaults — override them via the `POSTGRES_USER`/`POSTGRES_PASSWORD`, `RABBITMQ_USER`/`RABBITMQ_PASSWORD`, and `GRAFANA_USER`/`GRAFANA_PASSWORD` variables before anything non-local.
+> **Networking note:** in `docker-compose.yml` the gateway is the only HTTP entrypoint published to the host (`localhost:4000`). `auth-service`, `payments-service` and `notifications-service` are only reachable on the internal Docker network. Infrastructure (Postgres `5433`, Redis `6379`, RabbitMQ `5672`/`15672`, Mailpit `1025`/`8025`, Grafana, Prometheus, Jaeger, Loki) is published for local inspection. The dev credentials in the compose file (`nexuspay/nexuspay`, Grafana `admin/admin`) are local-only defaults - override them via the `POSTGRES_USER`/`POSTGRES_PASSWORD`, `RABBITMQ_USER`/`RABBITMQ_PASSWORD`, and `GRAFANA_USER`/`GRAFANA_PASSWORD` variables before anything non-local.
 
 ## What's baked in (DevOps / Infra showcase)
 
-- **CI/CD** — `.github/workflows/ci.yml`: changed-service matrix detection, lint + typecheck, unit tests, Docker build + push to GHCR with OCI cache, **Trivy** scanning (fail on CRITICAL), `npm audit`, OpenAPI drift validation, **Spectral** lint, and a k6 smoke test against the full compose stack.
-- **GitOps** — Helm library chart + one chart per service (`values-dev`/`values-prod` overlays), ArgoCD `AppProject` + `ApplicationSet` (matrix generator over services × environments), Gatekeeper admission policies (allowed registries, required resources), secrets bootstrap script. See [`infra/kubernetes/`](infra/kubernetes/).
-- **Load testing** — k6 suites for smoke / auth login / payment flows with tunable thresholds and a documented seed for a verified test user. See [`docs/k6-load-testing.md`](docs/k6-load-testing.md).
-- **API contract** — OpenAPI 3.1 spec, validated against actual source routes in CI (`scripts/validate-openapi.ts`) and linted with Spectral. Interactive docs served at `/docs/` on the gateway.
+- **CI/CD** - `.github/workflows/ci.yml`: changed-service matrix detection, lint + typecheck, unit tests, Docker build + push to GHCR with OCI cache, **Trivy** scanning (fail on CRITICAL), `npm audit`, OpenAPI drift validation, **Spectral** lint, and a k6 smoke test against the full compose stack.
+- **GitOps** - Helm library chart + one chart per service (`values-dev`/`values-prod` overlays), ArgoCD `AppProject` + `ApplicationSet` (matrix generator over services x environments), Gatekeeper admission policies (allowed registries, required resources), secrets bootstrap script. See [`infra/kubernetes/`](infra/kubernetes/).
+- **Load testing** - k6 suites for smoke / auth login / payment flows with tunable thresholds and a documented seed for a verified test user. See [`docs/k6-load-testing.md`](docs/k6-load-testing.md).
+- **API contract** - OpenAPI 3.1 spec, validated against actual source routes in CI (`scripts/validate-openapi.ts`) and linted with Spectral. Interactive docs served at `/docs/` on the gateway.
 
 ## Repo structure
 
 ```
 nexuspay-platform/
-├── services/
-│   ├── api-gateway/          # :4000  edge router, authN, rate limits, circuit breaker
-│   ├── auth-service/         # :4001  IAM, MFA, RBAC, audit, lockout
-│   ├── payments-service/     # :4002  idempotent payments, ledger, webhooks
-│   └── notifications-service/# :4003  email/SMS via RabbitMQ
-├── infra/
-│   ├── kubernetes/           # helm/, argocd/, policies/, data/, scripts/
-│   └── terraform/            # roadmap: provisioning (Phase 3)
-├── k6/                       # load-test scripts + local runner
-├── scripts/                  # openapi drift validation, test-user seed
-├── docs/                     # architecture, minikube guide, roadmap, load findings
-├── .github/workflows/ci.yml
-└── docker-compose.yml        # local stack: postgres + redis + rabbitmq + 4 services
+|-- services/
+|   |-- api-gateway/          # :4000  edge router, authN, rate limits, circuit breaker
+|   |-- auth-service/         # :4001  IAM, MFA, RBAC, audit, lockout
+|   |-- payments-service/     # :4002  idempotent payments, ledger, webhooks
+|   `-- notifications-service/# :4003  email/SMS via RabbitMQ
+|-- infra/
+|   |-- kubernetes/           # helm/, argocd/, policies/, data/, scripts/
+|   `-- terraform/            # roadmap: provisioning (Phase 3)
+|-- k6/                       # load-test scripts + local runner
+|-- scripts/                  # openapi drift validation, test-user seed
+|-- docs/                     # architecture, minikube guide, roadmap, load findings
+|-- .github/workflows/ci.yml
+`-- docker-compose.yml        # local stack: postgres + redis + rabbitmq + 4 services
 ```
 
 ## Quick start (local)
@@ -124,16 +128,16 @@ RabbitMQ management UI: http://localhost:15672 (`nexuspay` / `nexuspay`).
 # CI-equivalent smoke
 k6 run k6/smoke-test.js
 
-# Full load tests (auth login, payment flow) — seeds a verified user first
+# Full load tests (auth login, payment flow) - seeds a verified user first
 ./k6/run-local.sh all
 ```
 
 Phase-1 load testing surfaced and fixed three real production issues, all
 documented in [`docs/k6-load-testing.md`](docs/k6-load-testing.md):
 
-1. **Synchronous bcryptjs blocked the Node event loop** → gateway circuit breaker tripped → 503 cascade. Fixed with async `bcrypt.compare`, lower rounds in dev, larger threadpool, and a 5s downstream timeout.
-2. **Gateway didn't proxy `/users`** → `/v1/users/me` returned 404 through the API. Route added.
-3. **General rate limiter throttled payment load** → 429s during tests. Rate limits raised for load testing (kept tight in production).
+1. **Synchronous bcryptjs blocked the Node event loop** -> gateway circuit breaker tripped -> 503 cascade. Fixed with async `bcrypt.compare`, lower rounds in dev, larger threadpool, and a 5s downstream timeout.
+2. **Gateway didn't proxy `/users`** -> `/v1/users/me` returned 404 through the API. Route added.
+3. **General rate limiter throttled payment load** -> 429s during tests. Rate limits raised for load testing (kept tight in production).
 
 ## Kubernetes / GitOps
 

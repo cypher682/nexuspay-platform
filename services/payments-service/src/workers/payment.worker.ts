@@ -4,13 +4,14 @@ import type { Payment } from "@prisma/client";
 import { bullMqConnectionOptions } from "../lib/redis";
 import { logger } from "../lib/logger";
 import { prisma } from "../lib/prisma";
+import { env } from "../config/env";
 import { QUEUES } from "../queues/names";
 import { markFailed, markSucceeded, markProcessing } from "../services/payments.service";
 
-const PROVIDER_SUCCESS_PROBABILITY = 0.9;
+const PROVIDER_SUCCESS_RATE = env.PROVIDER_SUCCESS_RATE;
 
 function simulateProviderDecision(): { ok: boolean; providerRef?: string; reason?: string } {
-  if (crypto.randomBytes(1)[0] / 255 < PROVIDER_SUCCESS_PROBABILITY) {
+  if (crypto.randomBytes(1)[0] / 255 < PROVIDER_SUCCESS_RATE) {
     return { ok: true, providerRef: `mock_${crypto.randomBytes(8).toString("hex")}` };
   }
   return { ok: false, reason: "provider_declined" };

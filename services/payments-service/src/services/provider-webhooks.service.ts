@@ -38,24 +38,9 @@ export async function ingestWebhook(rawBody: Buffer, signatureHeader?: string): 
   }
   const payload = webhookPayloadSchema.parse(parsed);
 
-  let signatureValid = true;
-  try {
-    verifyProviderSignature(rawBody, signatureHeader);
-  } catch (err) {
-    if (err instanceof HttpError && err.statusCode === 401) {
-      signatureValid = false;
-      await prisma.webhookEvent.create({
-        data: {
-          eventId: payload.eventId,
-          type: payload.type,
-          signatureValid,
-          payload: payload as Prisma.InputJsonValue
-        }
-      });
-      throw new HttpError(401, "Invalid webhook signature");
-    }
-    throw err;
-  }
+  // Verify before persisting anything so an attacker-supplied eventId cannot
+  // poison the unique key path ahead of a legitimate event with the same id.
+  verifyProviderSignature(rawBody, signatureHeader);
 
   const existing = await prisma.webhookEvent.findUnique({ where: { eventId: payload.eventId } });
   if (existing) {
@@ -66,7 +51,7 @@ export async function ingestWebhook(rawBody: Buffer, signatureHeader?: string): 
     data: {
       eventId: payload.eventId,
       type: payload.type,
-      signatureValid,
+      signatureValid: true,
       payload: payload as Prisma.InputJsonValue
     }
   });

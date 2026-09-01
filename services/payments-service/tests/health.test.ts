@@ -148,6 +148,17 @@ describe("payments-service contract", () => {
     expect(res.status).toBe(401);
   });
 
+  it("does not persist invalid-signature webhooks (no eventId poisoning)", async () => {
+    const body = JSON.stringify({ eventId: "evt_future_real_1", type: "payment.succeeded" });
+    await request(app)
+      .post("/v1/webhooks/provider")
+      .set("Content-Type", "application/json")
+      .set("X-NexusPay-Signature", "sha256=deadbeef")
+      .send(body);
+    expect(prismaMock.webhookEvent.findUnique).not.toHaveBeenCalled();
+    expect(prismaMock.webhookEvent.create).not.toHaveBeenCalled();
+  });
+
   it("returns 500 (not 202) when webhook processing fails so the provider retries", async () => {
     prismaMock.payment.findFirst.mockRejectedValue(new Error("db exploded"));
     const body = JSON.stringify({
