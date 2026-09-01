@@ -26,9 +26,9 @@ describe("notifications-service contract", () => {
   let createApp: typeof import("../src/app").createApp;
   let app: ReturnType<typeof import("../src/app").createApp>;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     process.env.INTERNAL_API_KEY = process.env.INTERNAL_API_KEY ?? "test-internal-api-key-value";
-    ({ createApp } = require("../src/app"));
+    ({ createApp } = await import("../src/app"));
     app = createApp();
   });
 

@@ -1,5 +1,6 @@
 import request from "supertest";
 import crypto from "node:crypto";
+import jwt from "jsonwebtoken";
 
 const redisStore = new Map<string, string>();
 (globalThis as Record<string, unknown>).__paymentsRedisStore = redisStore;
@@ -58,14 +59,12 @@ describe("payments-service contract", () => {
   let createApp: typeof import("../src/app").createApp;
   let app: ReturnType<typeof import("../src/app").createApp>;
 
-  const tokenFor = (sub: string, scopes: string[] = []) => {
-    const jwt = require("jsonwebtoken");
-    return jwt.sign(
+  const tokenFor = (sub: string, scopes: string[] = []) =>
+    jwt.sign(
       { sub, type: "access", scopes, iss: process.env.AUTH_ISSUER ?? "NexusPay" },
       process.env.JWT_SECRET ?? "test-secret-value-at-least-32-chars",
       { algorithm: "HS256", expiresIn: "5m" }
     );
-  };
 
   const webhookSignature = (body: string) =>
     "sha256=" +
@@ -74,8 +73,8 @@ describe("payments-service contract", () => {
       .update(body)
       .digest("hex");
 
-  beforeAll(() => {
-    ({ createApp } = require("../src/app"));
+  beforeAll(async () => {
+    ({ createApp } = await import("../src/app"));
     app = createApp();
   });
 

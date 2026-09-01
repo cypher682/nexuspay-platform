@@ -1,4 +1,6 @@
 import request from "supertest";
+import jwt from "jsonwebtoken";
+import { createApp } from "../src/app";
 
 jest.mock("../src/lib/prisma", () => ({
   prisma: {
@@ -37,7 +39,7 @@ jest.mock("../src/lib/redis", () => {
   return { redis: client, closeRedis: jest.fn(async () => undefined) };
 });
 
-const authFlow = require("../src/app");
+const authFlow = { createApp };
 
 describe("auth API contract", () => {
   let app: ReturnType<typeof authFlow.createApp>;
@@ -96,7 +98,6 @@ describe("auth API contract", () => {
     });
 
     it("rejects non-access JWT types on protected routes", async () => {
-      const jwt = require("jsonwebtoken");
       const token = jwt.sign(
         { sub: "user_1", type: "refresh", family_id: "fam_1", iss: "NexusPay" },
         process.env.JWT_SECRET ?? "test-secret-value-at-least-32-chars",

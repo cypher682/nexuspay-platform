@@ -49,8 +49,8 @@ describe("api-gateway contract", () => {
   let createApp: typeof import("../src/app").createApp;
   let app: ReturnType<typeof import("../src/app").createApp>;
 
-  beforeAll(() => {
-    ({ createApp } = require("../src/app"));
+  beforeAll(async () => {
+    ({ createApp } = await import("../src/app"));
     app = createApp();
   });
 
