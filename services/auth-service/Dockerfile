@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM node:20-alpine AS base
+FROM node:24-alpine AS base
 WORKDIR /app
 COPY package*.json ./
 
@@ -11,7 +11,7 @@ COPY . .
 RUN --mount=type=cache,target=/root/.npm npm run prisma:generate
 RUN npm run build
 
-FROM node:20-alpine AS runtime
+FROM node:24-alpine AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
 RUN addgroup -S nexuspay && adduser -S nexuspay -G nexuspay
