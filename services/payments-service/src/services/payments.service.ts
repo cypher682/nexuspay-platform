@@ -240,13 +240,15 @@ export async function refundPayment(paymentId: string, userId: string, hasWildca
   const payment = await getPaymentForUser(paymentId, userId, hasWildcardScope);
   assertTransition(payment.status, "REFUNDED");
 
+  const feeMinor = readFeeMinor(payment.metadata);
+
   const refunded = await prisma.$transaction(async (tx) => {
     await tx.ledgerEntry.createMany({
       data: [
         {
           paymentId,
-          account: "CUSTOMER_REFUND",
-          direction: "DEBIT",
+          account: "CUSTOMER_SOURCE",
+          direction: "CREDIT",
           amountMinor: payment.amountMinor,
           currency: payment.currency
         },
@@ -254,9 +256,20 @@ export async function refundPayment(paymentId: string, userId: string, hasWildca
           paymentId,
           account: "PAYMENTS_REVENUE",
           direction: "DEBIT",
-          amountMinor: payment.amountMinor,
+          amountMinor: payment.amountMinor - feeMinor,
           currency: payment.currency
-        }
+        },
+        ...(feeMinor > 0
+          ? [
+              {
+                paymentId,
+                account: "PAYMENTS_FEES" as const,
+                direction: "DEBIT" as const,
+                amountMinor: feeMinor,
+                currency: payment.currency
+              }
+            ]
+          : [])
       ]
     });
     return tx.payment.update({
@@ -265,7 +278,7 @@ export async function refundPayment(paymentId: string, userId: string, hasWildca
     });
   });
 
-  logger.info("payment.refunded", { paymentId });
+  logger.info("payment.refunded", { paymentId, feeMinor });
   return refunded;
 }
 

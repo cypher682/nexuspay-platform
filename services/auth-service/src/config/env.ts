@@ -18,7 +18,7 @@ const envSchema = z.object({
   REDIS_URL: z.string().min(1).default("redis://localhost:6379"),
   RABBITMQ_URL: z.string().min(1).default("amqp://nexuspay:nexuspay@localhost:5672"),
   EVENTS_EXCHANGE: z.string().min(1).default("nexuspay.events"),
-  PUBLIC_BASE_URL: z.string().min(1).default("http://localhost:4001"),
+  PUBLIC_BASE_URL: z.string().min(1).default("http://localhost:4000"),
 
   OTEL_TRACES_ENABLED: boolFromEnv,
   OTEL_TRACES_ENDPOINT: z.string().url().default("http://localhost:4318/v1/traces"),

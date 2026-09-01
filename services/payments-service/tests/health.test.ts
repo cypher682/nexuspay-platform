@@ -34,13 +34,16 @@ jest.mock("../src/lib/redis", () => {
 const prismaMock = {
   $queryRaw: jest.fn(),
   $disconnect: jest.fn(),
-  payment: { findUnique: jest.fn(), findMany: jest.fn() },
+  $transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => (fn as () => Promise<unknown>)()),
+  payment: { findUnique: jest.fn(), findMany: jest.fn(), findFirst: jest.fn() },
   idempotencyRecord: { findUnique: jest.fn(), create: jest.fn() },
   webhookEvent: {
     findUnique: jest.fn().mockResolvedValue(null),
     create: jest
       .fn()
-      .mockResolvedValue({ eventId: "evt_ok_1", type: "payment.succeeded", processedAt: null }),
+      .mockImplementation(({ data }: { data: Record<string, unknown> }) =>
+        Promise.resolve({ ...data, eventId: String(data.eventId), processedAt: null })
+      ),
     update: jest.fn().mockResolvedValue({})
   }
 };
@@ -82,6 +85,7 @@ describe("payments-service contract", () => {
     redisStore.clear();
     prismaMock.idempotencyRecord.findUnique.mockReset().mockResolvedValue(null);
     prismaMock.idempotencyRecord.create.mockReset().mockResolvedValue({});
+    prismaMock.payment.findFirst.mockReset().mockResolvedValue(null);
   });
 
   it("GET /health returns service info", async () => {
@@ -142,5 +146,67 @@ describe("payments-service contract", () => {
       .set("X-NexusPay-Signature", "sha256=deadbeef")
       .send(body);
     expect(res.status).toBe(401);
+  });
+
+  it("returns 500 (not 202) when webhook processing fails so the provider retries", async () => {
+    prismaMock.payment.findFirst.mockRejectedValue(new Error("db exploded"));
+    const body = JSON.stringify({
+      eventId: "evt_fail_1",
+      type: "transfer.completed",
+      data: { reference: "pay_fail_1", providerRef: "prov_1" }
+    });
+    const res = await request(app)
+      .post("/v1/webhooks/provider")
+      .set("Content-Type", "application/json")
+      .set("X-NexusPay-Signature", webhookSignature(body))
+      .send(body);
+    expect(res.status).toBe(500);
+    expect(res.body.received).toBe(false);
+  });
+
+  it("refund ledger records balancing reversal entries", async () => {
+    const captured: unknown[] = [];
+    const txMock = {
+      ledgerEntry: {
+        createMany: jest.fn(async ({ data }: { data: unknown[] }) => {
+          captured.push(...data);
+        })
+      },
+      payment: {
+        update: jest.fn(async () => ({
+          id: "pay_123",
+          status: "REFUNDED",
+          amountMinor: 5000,
+          currency: "NGN"
+        }))
+      }
+    };
+    prismaMock.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(txMock));
+    prismaMock.payment.findUnique.mockResolvedValue({
+      id: "pay_123",
+      userId: "user_1",
+      reference: "pay_reconcile_1",
+      amountMinor: 5000,
+      currency: "NGN",
+      status: "SUCCEEDED",
+      metadata: { feeMinor: 200 },
+      capturedAt: new Date()
+    });
+
+    const res = await request(app)
+      .post("/v1/payments/pay_123/refund")
+      .set("Authorization", `Bearer ${tokenFor("user_1", ["payments:refund"])}`);
+    expect(res.status).toBe(200);
+
+    expect(captured).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ account: "CUSTOMER_SOURCE", direction: "CREDIT", amountMinor: 5000 }),
+        expect.objectContaining({ account: "PAYMENTS_REVENUE", direction: "DEBIT", amountMinor: 4800 }),
+        expect.objectContaining({ account: "PAYMENTS_FEES", direction: "DEBIT", amountMinor: 200 })
+      ])
+    );
+    expect(captured).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ account: "CUSTOMER_REFUND" })])
+    );
   });
 });

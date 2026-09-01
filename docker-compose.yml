@@ -2,8 +2,8 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: nexuspay
-      POSTGRES_PASSWORD: nexuspay
+      POSTGRES_USER: ${POSTGRES_USER:-nexuspay}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nexuspay}
       POSTGRES_MULTIPLE_DATABASES: nexuspay_auth,nexuspay_payments,nexuspay_notifications
     ports:
       - "5433:5432"
@@ -11,7 +11,7 @@ services:
       - pgdata:/var/lib/postgresql/data
       - ./scripts/init-multi-db.sh:/docker-entrypoint-initdb.d/init-multi-db.sh:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U nexuspay"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-nexuspay}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -32,8 +32,8 @@ services:
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
     environment:
-      RABBITMQ_DEFAULT_USER: nexuspay
-      RABBITMQ_DEFAULT_PASS: nexuspay
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-nexuspay}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-nexuspay}
     ports:
       - "5672:5672"
       - "15672:15672"
@@ -45,17 +45,29 @@ services:
       timeout: 10s
       retries: 10
 
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8025/readyz"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   auth-service:
     build: ./services/auth-service
     env_file: ./.env
     environment:
       PORT: 4001
-      DATABASE_URL: postgresql://nexuspay:nexuspay@postgres:5432/nexuspay_auth?schema=public
+      DATABASE_URL: postgresql://${POSTGRES_USER:-nexuspay}:${POSTGRES_PASSWORD:-nexuspay}@postgres:5432/nexuspay_auth?schema=public
       REDIS_URL: redis://redis:6379
-      RABBITMQ_URL: amqp://nexuspay:nexuspay@rabbitmq:5672
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-nexuspay}:${RABBITMQ_PASSWORD:-nexuspay}@rabbitmq:5672
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:4000}
       OTEL_TRACES_ENDPOINT: http://jaeger:4318/v1/traces
-    ports:
-      - "4001:4001"
+    expose:
+      - "4001"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:4001/health/live"]
       interval: 10s
@@ -75,12 +87,12 @@ services:
     env_file: ./.env
     environment:
       PORT: 4002
-      DATABASE_URL: postgresql://nexuspay:nexuspay@postgres:5432/nexuspay_payments?schema=public
+      DATABASE_URL: postgresql://${POSTGRES_USER:-nexuspay}:${POSTGRES_PASSWORD:-nexuspay}@postgres:5432/nexuspay_payments?schema=public
       REDIS_URL: redis://redis:6379
-      RABBITMQ_URL: amqp://nexuspay:nexuspay@rabbitmq:5672
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-nexuspay}:${RABBITMQ_PASSWORD:-nexuspay}@rabbitmq:5672
       OTEL_TRACES_ENDPOINT: http://jaeger:4318/v1/traces
-    ports:
-      - "4002:4002"
+    expose:
+      - "4002"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:4002/health/live"]
       interval: 10s
@@ -100,11 +112,12 @@ services:
     env_file: ./.env
     environment:
       PORT: 4003
-      DATABASE_URL: postgresql://nexuspay:nexuspay@postgres:5432/nexuspay_notifications?schema=public
-      RABBITMQ_URL: amqp://nexuspay:nexuspay@rabbitmq:5672
+      DATABASE_URL: postgresql://${POSTGRES_USER:-nexuspay}:${POSTGRES_PASSWORD:-nexuspay}@postgres:5432/nexuspay_notifications?schema=public
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-nexuspay}:${RABBITMQ_PASSWORD:-nexuspay}@rabbitmq:5672
+      SMTP_URL: smtp://mailpit:1025
       OTEL_TRACES_ENDPOINT: http://jaeger:4318/v1/traces
-    ports:
-      - "4003:4003"
+    expose:
+      - "4003"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:4003/health/live"]
       interval: 10s
@@ -153,8 +166,8 @@ services:
   grafana:
     image: grafana/grafana:12.3.11
     environment:
-      GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
       GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
       - ./infra/monitoring/grafana/datasources/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro

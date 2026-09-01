@@ -8,6 +8,18 @@ const failureCounts = new Map<string, { count: number; openedAt: number }>();
 const CIRCUIT_THRESHOLD = 5;
 const CIRCUIT_RESET_MS = 30_000;
 
+const HOP_BY_HOP_HEADERS = new Set([
+  "connection",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade"
+]);
+const INTERNAL_HEADERS = new Set(["x-user-id", "x-user-scopes"]);
+
 function isCircuitOpen(target: string): boolean {
   const state = failureCounts.get(target);
   if (!state) return false;
@@ -46,9 +58,10 @@ export function proxy(target: string) {
     const outgoingHeaders: Record<string, string | string[]> = {};
 
     for (const [key, value] of Object.entries(req.headers)) {
-      if (value !== undefined) {
-        outgoingHeaders[key] = value;
-      }
+      if (value === undefined) continue;
+      const lower = key.toLowerCase();
+      if (HOP_BY_HOP_HEADERS.has(lower) || INTERNAL_HEADERS.has(lower)) continue;
+      outgoingHeaders[key] = value;
     }
 
     const reqId = req.requestId ?? "";

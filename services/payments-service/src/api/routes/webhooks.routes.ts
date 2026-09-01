@@ -29,6 +29,8 @@ router.post(
         eventId: event.eventId,
         error: err instanceof Error ? err.message : String(err)
       });
+      res.status(500).json({ received: false, eventId: event.eventId, error: "webhook_processing_failed" });
+      return;
     }
 
     res.status(202).json({ received: true, eventId: event.eventId });

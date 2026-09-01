@@ -17,7 +17,7 @@ import { publishPasswordReset, publishUserRegistered } from "../lib/events";
 import { HttpError } from "../middleware/error-handler";
 import { logger } from "../lib/logger";
 import { recordAuditEvent } from "./audit.service";
-import { assignRoleToUser, seedBaseRoles } from "./rbac.service";
+import { assignRoleToUser, getPermissionNamesForUser, seedBaseRoles } from "./rbac.service";
 import {
   checkLoginLockout,
   clearFailedLogins,
@@ -87,7 +87,8 @@ async function issueTokenPair(user: User): Promise<TokenPair> {
     }
   });
 
-  return { accessToken: createAccessToken(user.id, [], user.email), refreshToken };
+  const scopes = [...(await getPermissionNamesForUser(user.id))].sort();
+  return { accessToken: createAccessToken(user.id, scopes, user.email), refreshToken };
 }
 
 export async function registerUser(
@@ -316,7 +317,8 @@ export async function refreshTokens(refreshToken: string): Promise<TokenPair> {
     metadata: { familyId: family.familyId }
   });
 
-  return { accessToken: createAccessToken(user.id, [], user.email), refreshToken: nextRefreshToken };
+  const scopes = [...(await getPermissionNamesForUser(user.id))].sort();
+  return { accessToken: createAccessToken(user.id, scopes, user.email), refreshToken: nextRefreshToken };
 }
 
 export async function logoutUser(

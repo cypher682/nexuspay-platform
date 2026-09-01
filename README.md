@@ -67,6 +67,8 @@ Shared: PostgreSQL 16 · Redis 7 · RabbitMQ 3.13
 
 All services: TypeScript, Express 5, Prisma ORM, Zod validation, Winston structured logs, Jest tests, multi-stage Docker builds, health/readiness probes, non-root runtime user, BuildKit cache mounts, and committed lockfiles (`npm ci` builds).
 
+> **Networking note:** in `docker-compose.yml` the gateway is the only HTTP entrypoint published to the host (`localhost:4000`). `auth-service`, `payments-service` and `notifications-service` are only reachable on the internal Docker network. Infrastructure (Postgres `5433`, Redis `6379`, RabbitMQ `5672`/`15672`, Mailpit `1025`/`8025`, Grafana, Prometheus, Jaeger, Loki) is published for local inspection. The dev credentials in the compose file (`nexuspay/nexuspay`, Grafana `admin/admin`) are local-only defaults — override them via the `POSTGRES_USER`/`POSTGRES_PASSWORD`, `RABBITMQ_USER`/`RABBITMQ_PASSWORD`, and `GRAFANA_USER`/`GRAFANA_PASSWORD` variables before anything non-local.
+
 ## What's baked in (DevOps / Infra showcase)
 
 - **CI/CD** — `.github/workflows/ci.yml`: changed-service matrix detection, lint + typecheck, unit tests, Docker build + push to GHCR with OCI cache, **Trivy** scanning (fail on CRITICAL), `npm audit`, OpenAPI drift validation, **Spectral** lint, and a k6 smoke test against the full compose stack.
