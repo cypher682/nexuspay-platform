@@ -5,7 +5,7 @@ import compression from "compression";
 import morgan from "morgan";
 import path from "node:path";
 import { env } from "./config/env";
-import { logger, stream } from "./lib/logger";
+import { stream } from "./lib/logger";
 import v1Routes from "./api/routes/v1";
 import healthRoutes from "./api/routes/health.routes";
 import { correlationId } from "./middleware/correlation-id";

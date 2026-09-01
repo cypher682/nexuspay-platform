@@ -2,9 +2,15 @@
 
 [![CI](https://github.com/cypher682/nexuspay-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/cypher682/nexuspay-platform/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-![Node](https://img.shields.io/badge/node-20-green)
-![TypeScript](https://img.shields.io/badge/typescript-5-blue)
-![PostgreSQL](https://img.shields.io/badge/postgres-16-blue)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6?logo=typescript&logoColor=white)
+![Node](https://img.shields.io/badge/Node.js-20_LTS-339933?logo=node.js&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169e1?logo=postgresql&logoColor=white)
+![Redis](https://img.shields.io/badge/Redis-7-dc382d?logo=redis&logoColor=white)
+![RabbitMQ](https://img.shields.io/badge/RabbitMQ-3.13-ff6600?logo=rabbitmq&logoColor=white)
+![Kubernetes](https://img.shields.io/badge/Kubernetes-Minikube-326ce5?logo=kubernetes&logoColor=white)
+![ArgoCD](https://img.shields.io/badge/GitOps-ArgoCD-ef6b4a?logo=argo&logoColor=white)
+![Helm](https://img.shields.io/badge/Helm-3-0f1689?logo=helm&logoColor=white)
+![k6](https://img.shields.io/badge/Load_Testing-k6-7d64ff?logo=k6&logoColor=white)
 
 Production-grade fintech platform built as a self-contained lab product to practice
 real-world DevOps, cloud, infrastructure, and security engineering. Four
@@ -14,12 +20,12 @@ on Docker Desktop and minikube at **zero cloud spend**.
 
 ## What it is
 
-NexusPay is a payment platform with:
+NexusPay is a payment platform featuring:
 
-- **JWT auth** with refresh-token rotation (reuse detection), TOTP MFA, RBAC scopes, and brute-force lockout
-- **Idempotent payments** with a double-entry ledger, payment state machine, HMAC-verified provider webhooks, and reconciliation
-- **Async notifications** (email/SMS) via RabbitMQ with templates, delivery tracking, and retries
-- **API gateway** with JWT validation, sliding-window rate limiting (Redis), downstream circuit breaker, and correlated request IDs
+- **JWT Auth & IAM** — Refresh-token rotation (family reuse detection), TOTP MFA, RBAC scopes, and brute-force lockout.
+- **Idempotent Payments** — Double-entry ledger, payment state machine, HMAC-verified provider webhooks, and reconciliation.
+- **Async Notifications** — Multi-channel (email/SMS) via RabbitMQ with templates, delivery tracking, and dead-letter retries.
+- **API Gateway** — JWT validation, Redis sliding-window rate limiting, downstream circuit breaker, and correlated request IDs.
 
 > Monetary amounts are stored as **integer minor units** (kobo/cents). No floats anywhere.
 
@@ -64,9 +70,9 @@ All services: TypeScript, Express 5, Prisma ORM, Zod validation, Winston structu
 ## What's baked in (DevOps / Infra showcase)
 
 - **CI/CD** — `.github/workflows/ci.yml`: changed-service matrix detection, lint + typecheck, unit tests, Docker build + push to GHCR with OCI cache, **Trivy** scanning (fail on CRITICAL), `npm audit`, OpenAPI drift validation, **Spectral** lint, and a k6 smoke test against the full compose stack.
-- **GitOps** — Helm library chart + one chart per service (`values-dev`/`values-prod` overlays), ArgoCD `AppProject` + `ApplicationSet` (matrix generator over services × environments), Gatekeeper admission policies (allowed registries, required resources), secrets bootstrap script. See `infra/kubernetes/`.
-- **Load testing** — k6 suites for smoke / auth login / payment flows with tunable thresholds and a documented seed for a verified test user. See `docs/k6-load-testing.md`.
-- **API contract** — OpenAPI 3.1 spec, validated against actual source routes in CI (`scripts/validate-openapi.ts`) and linted with Spectral. Docs served at `/docs/` on the gateway.
+- **GitOps** — Helm library chart + one chart per service (`values-dev`/`values-prod` overlays), ArgoCD `AppProject` + `ApplicationSet` (matrix generator over services × environments), Gatekeeper admission policies (allowed registries, required resources), secrets bootstrap script. See [`infra/kubernetes/`](infra/kubernetes/).
+- **Load testing** — k6 suites for smoke / auth login / payment flows with tunable thresholds and a documented seed for a verified test user. See [`docs/k6-load-testing.md`](docs/k6-load-testing.md).
+- **API contract** — OpenAPI 3.1 spec, validated against actual source routes in CI (`scripts/validate-openapi.ts`) and linted with Spectral. Interactive docs served at `/docs/` on the gateway.
 
 ## Repo structure
 
@@ -79,7 +85,7 @@ nexuspay-platform/
 │   └── notifications-service/# :4003  email/SMS via RabbitMQ
 ├── infra/
 │   ├── kubernetes/           # helm/, argocd/, policies/, data/, scripts/
-│   └── terraform/            # roadmap: provisioning (not yet written)
+│   └── terraform/            # roadmap: provisioning (Phase 3)
 ├── k6/                       # load-test scripts + local runner
 ├── scripts/                  # openapi drift validation, test-user seed
 ├── docs/                     # architecture, minikube guide, roadmap, load findings
@@ -98,11 +104,8 @@ cp .env.example .env
 # Build & start the full stack (postgres, redis, rabbitmq, 4 services)
 docker compose up -d --build
 
-# Apply migrations per service (each service's DB is a separate schema/database)
-cd services/auth-service        && npx prisma migrate deploy
-cd ../payments-service          && npx prisma migrate deploy
-cd ../notifications-service     && npx prisma migrate deploy
-cd ../..
+# Apply database migrations for all services
+npm run migrate:all
 
 # Gateway is the entrypoint
 curl http://localhost:4000/health
@@ -110,9 +113,8 @@ curl http://localhost:4000/health
 
 RabbitMQ management UI: http://localhost:15672 (`nexuspay` / `nexuspay`).
 
-> Postgres is published to the host as `localhost:5433` to avoid colliding with a
-> locally-installed Postgres on 5432. Services reach each other on `postgres:5432`
-> inside the compose network.
+> **Note on Ports**: PostgreSQL is published to the host on `localhost:5433` to prevent colliding with any locally-installed Postgres on `5432`. Services communicate internally over `postgres:5432` within the Docker Compose bridge network.
+
 
 ## Load testing & findings
 

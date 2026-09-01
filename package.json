@@ -2,8 +2,9 @@
   "name": "nexuspay-platform",
   "version": "1.0.0",
   "private": true,
-  "description": "NexusPay fintech platform — 4 microservices + infrastructure",
+  "description": "Production-grade fintech platform & DevOps lab: 4 TypeScript microservices behind an API gateway with GitOps (ArgoCD + Helm), container security, and k6 load testing.",
   "scripts": {
+    "migrate:all": "npm --prefix services/auth-service run prisma:deploy && npm --prefix services/payments-service run prisma:deploy && npm --prefix services/notifications-service run prisma:deploy",
     "openapi:validate": "tsx scripts/validate-openapi.ts",
     "openapi:lint": "spectral lint docs/openapi.yaml",
     "seed:test-user": "tsx scripts/seed-test-user.ts",
@@ -17,3 +18,4 @@
     "yaml": "^2.6.1"
   }
 }
+

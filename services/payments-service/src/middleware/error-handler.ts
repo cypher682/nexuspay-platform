@@ -13,8 +13,8 @@ export class HttpError extends Error {
   }
 }
 
-export function notFoundHandler(_req: Request, res: Response): void {
-  res.status(404).json({ error: "not_found", message: "Route not found" });
+export function notFoundHandler(req: Request, res: Response): void {
+  res.status(404).json({ error: "not_found", message: "Route not found", requestId: req.requestId });
 }
 
 export function errorHandler(

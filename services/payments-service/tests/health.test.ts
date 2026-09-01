@@ -130,7 +130,7 @@ describe("payments-service contract", () => {
       .post("/v1/webhooks/provider")
       .set("Content-Type", "application/json")
       .set("X-NexusPay-Signature", webhookSignature(body))
-      .send(Buffer.from(body));
+      .send(body);
     expect(res.status).toBe(202);
     expect(res.body.received).toBe(true);
   });
@@ -141,7 +141,7 @@ describe("payments-service contract", () => {
       .post("/v1/webhooks/provider")
       .set("Content-Type", "application/json")
       .set("X-NexusPay-Signature", "sha256=deadbeef")
-      .send(Buffer.from(body));
+      .send(body);
     expect(res.status).toBe(401);
   });
 });

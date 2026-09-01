@@ -1,17 +1,6 @@
 import request from "supertest";
 
-const prismaMock = (globalThis as Record<string, unknown>).__prismaMock as {
-  $queryRaw: jest.Mock;
-  template: { findUnique: jest.Mock; findMany: jest.Mock; upsert: jest.Mock };
-  notification: {
-    create: jest.Mock;
-    findUnique: jest.Mock;
-    findMany: jest.Mock;
-    update: jest.Mock;
-  };
-};
-
-(globalThis as Record<string, unknown>).__prismaMock = {
+const mockPrisma = {
   $queryRaw: jest.fn(),
   template: { findUnique: jest.fn(), findMany: jest.fn(), upsert: jest.fn() },
   notification: {
@@ -23,7 +12,7 @@ const prismaMock = (globalThis as Record<string, unknown>).__prismaMock as {
 };
 
 jest.mock("../src/lib/prisma", () => ({
-  prisma: (globalThis as Record<string, unknown>).__prismaMock
+  prisma: mockPrisma
 }));
 
 jest.mock("../src/lib/rabbitmq", () => ({
@@ -38,11 +27,12 @@ describe("notifications-service contract", () => {
   let app: ReturnType<typeof import("../src/app").createApp>;
 
   beforeAll(() => {
+    process.env.INTERNAL_API_KEY = process.env.INTERNAL_API_KEY ?? "test-internal-api-key-value";
     ({ createApp } = require("../src/app"));
     app = createApp();
   });
 
-  const apiKey = process.env.INTERNAL_API_KEY ?? "test-internal-api-key-value";
+  const apiKey = "test-internal-api-key-value";
 
   it("GET /health is public and returns service info", async () => {
     const res = await request(app).get("/health");
@@ -53,7 +43,7 @@ describe("notifications-service contract", () => {
   it("rejects /v1 without internal API key", async () => {
     const res = await request(app).get("/v1/notifications");
     expect(res.status).toBe(401);
-    expect(res.body.message).toMatch(/internal api key/i);
+    expect(res.body.message).toMatch(/x-internal-api-key/i);
   });
 
   it("rejects invalid channel enum with 422", async () => {
@@ -66,7 +56,7 @@ describe("notifications-service contract", () => {
   });
 
   it("returns 404 for unknown template on enqueue", async () => {
-    prismaMock.template.findUnique.mockResolvedValue(null);
+    mockPrisma.template.findUnique.mockResolvedValue(null);
     const res = await request(app)
       .post("/v1/notifications")
       .set("X-Internal-Api-Key", apiKey)

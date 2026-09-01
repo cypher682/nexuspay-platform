@@ -14,9 +14,14 @@ env:
   REGISTRY: ghcr.io
   IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/nexuspay
 
+permissions:
+  contents: read
+  actions: read
+
 jobs:
   # ──────────────────────────────────────────────
-  # Detect which services changed
+  # Detect which services changed (emits JSON list
+  # of changed services for downstream matrices)
   # ──────────────────────────────────────────────
   changes:
     runs-on: ubuntu-latest
@@ -25,6 +30,7 @@ jobs:
       auth: ${{ steps.filter.outputs.auth }}
       payments: ${{ steps.filter.outputs.payments }}
       notifications: ${{ steps.filter.outputs.notifications }}
+      services: ${{ steps.services.outputs.json }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -40,6 +46,29 @@ jobs:
               - 'services/payments-service/**'
             notifications:
               - 'services/notifications-service/**'
+
+      - name: Build JSON matrix of changed services
+        id: services
+        env:
+          GATEWAY: ${{ steps.filter.outputs.gateway }}
+          AUTH: ${{ steps.filter.outputs.auth }}
+          PAYMENTS: ${{ steps.filter.outputs.payments }}
+          NOTIFICATIONS: ${{ steps.filter.outputs.notifications }}
+        run: |
+          JSON="[]"
+          add() {
+            JSON=$(node -e '
+              const list = JSON.parse(process.argv[1]);
+              list.push({ service: process.argv[2] });
+              console.log(JSON.stringify(list));
+            ' "$JSON" "$1")
+          }
+          [ "$GATEWAY" = "true" ] && add api-gateway
+          [ "$AUTH" = "true" ] && add auth-service
+          [ "$PAYMENTS" = "true" ] && add payments-service
+          [ "$NOTIFICATIONS" = "true" ] && add notifications-service
+          echo "json=$JSON" >> "$GITHUB_OUTPUT"
+          echo "Changed services: $JSON"
 
   # ──────────────────────────────────────────────
   # Lint + Typecheck (all services, always runs)
@@ -71,76 +100,48 @@ jobs:
           done
 
   # ──────────────────────────────────────────────
-  # Unit tests (matrix: only changed services)
+  # Unit tests (only changed services)
   # ──────────────────────────────────────────────
   test:
     needs: changes
     runs-on: ubuntu-latest
+    if: needs.changes.outputs.services != '[]'
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - service: api-gateway
-            port: 4000
-            changed: ${{ needs.changes.outputs.gateway }}
-          - service: auth-service
-            port: 4001
-            changed: ${{ needs.changes.outputs.auth }}
-          - service: payments-service
-            port: 4002
-            changed: ${{ needs.changes.outputs.payments }}
-          - service: notifications-service
-            port: 4003
-            changed: ${{ needs.changes.outputs.notifications }}
+        include: ${{ fromJSON(needs.changes.outputs.services) }}
     steps:
       - uses: actions/checkout@v4
-        if: matrix.changed == 'true'
       - uses: actions/setup-node@v4
-        if: matrix.changed == 'true'
         with:
           node-version: 20
           cache: npm
           cache-dependency-path: services/${{ matrix.service }}/package-lock.json
 
       - name: Test ${{ matrix.service }}
-        if: matrix.changed == 'true'
         working-directory: services/${{ matrix.service }}
         run: |
           npm ci --no-audit --no-fund
           npm test -- --coverage --coverageReporters=text-summary
 
   # ──────────────────────────────────────────────
-  # Docker build + push to GHCR (only changed)
+  # Docker build + push to GHCR (push only, changed)
   # ──────────────────────────────────────────────
   build:
     needs: [changes, test]
     runs-on: ubuntu-latest
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && needs.changes.outputs.services != '[]'
     permissions:
       contents: read
       packages: write
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - service: api-gateway
-            port: 4000
-            changed: ${{ needs.changes.outputs.gateway }}
-          - service: auth-service
-            port: 4001
-            changed: ${{ needs.changes.outputs.auth }}
-          - service: payments-service
-            port: 4002
-            changed: ${{ needs.changes.outputs.payments }}
-          - service: notifications-service
-            port: 4003
-            changed: ${{ needs.changes.outputs.notifications }}
+        include: ${{ fromJSON(needs.changes.outputs.services) }}
     steps:
       - uses: actions/checkout@v4
-        if: matrix.changed == 'true'
 
       - name: Log in to GHCR
-        if: matrix.changed == 'true'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -148,7 +149,6 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push ${{ matrix.service }}
-        if: matrix.changed == 'true'
         uses: docker/build-push-action@v6
         with:
           context: services/${{ matrix.service }}
@@ -160,8 +160,10 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Trivy scan ${{ matrix.service }} image
-        if: matrix.changed == 'true'
         uses: aquasecurity/trivy-action@0.28.0
+        env:
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
         with:
           image-ref: ${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:${{ github.sha }}
           severity: CRITICAL
@@ -203,7 +205,7 @@ jobs:
           node-version: 20
 
       - name: Install root dependencies (tsx, yaml)
-        run: npm install
+        run: npm ci
 
       - name: Validate OpenAPI spec against code
         run: npx tsx scripts/validate-openapi.ts
@@ -218,9 +220,9 @@ jobs:
   # k6 smoke test (lightweight CI validation)
   # ──────────────────────────────────────────────
   k6-smoke:
-    needs: lint
+    needs: [lint, changes]
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: needs.changes.outputs.services != '[]'
     steps:
       - uses: actions/checkout@v4
 
@@ -228,16 +230,7 @@ jobs:
         run: cp .env.example .env
 
       - name: Start full stack via Docker Compose
-        run: |
-          docker compose up -d
-          for i in $(seq 1 120); do
-            if [ "$(docker inspect -f '{{.State.Health.Status}}' $(docker compose ps -q auth-service) 2>/dev/null)" = "healthy" ]; then
-              echo "auth-service healthy"
-              break
-            fi
-            sleep 2
-            if [ "$i" = "120" ]; then echo "Timed out waiting for services"; docker compose logs --tail=50; exit 1; fi
-          done
+        run: docker compose up -d --wait
 
       - name: Apply Prisma migrations
         run: |

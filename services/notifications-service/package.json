@@ -21,6 +21,9 @@
   "author": "Suleiman Abdulrahman",
   "license": "MIT",
   "type": "commonjs",
+  "overrides": {
+    "deepmerge-ts": "^8.0.0"
+  },
   "dependencies": {
     "@prisma/client": "^6.17.1",
     "amqplib": "^0.10.9",
@@ -30,7 +33,7 @@
     "express": "^5.1.0",
     "helmet": "^8.1.0",
     "morgan": "^1.10.1",
-    "nodemailer": "^6.9.16",
+    "nodemailer": "^9.1.0",
     "winston": "^3.18.3",
     "zod": "^4.1.12"
   },

@@ -1,5 +1,4 @@
 import crypto from "node:crypto";
-import { env } from "../../config/env";
 import { logger } from "../logger";
 import type { NotificationSender } from "./index";
 

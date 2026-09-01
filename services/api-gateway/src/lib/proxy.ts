@@ -35,7 +35,7 @@ function recordSuccess(target: string): void {
 export function proxy(target: string) {
   const parsed = new URL(target);
 
-  return function proxyHandler(req: Request, res: Response, next: NextFunction) {
+  return function proxyHandler(req: Request, res: Response, _next: NextFunction) {
     if (isCircuitOpen(target)) {
       if (!res.headersSent) {
         res.status(503).json({ error: "service_unavailable", message: "Downstream temporarily unavailable", requestId: req.requestId ?? "" });
