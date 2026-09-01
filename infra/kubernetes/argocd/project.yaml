@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: nexuspay
+  namespace: argocd
+spec:
+  description: NexusPay fintech platform (gateway + auth + payments + notifications)
+  sourceRepos:
+    - https://github.com/cypher682/nexuspay-platform.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: nexuspay-dev
+    - server: https://kubernetes.default.svc
+      namespace: nexuspay-prod
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+  namespaceResourceBlacklist:
+    - group: ""
+      kind: ResourceQuota
+  roles:
+    - name: deployer
+      policies:
+        - p, proj:nexuspay:deployer, applications, get, nexuspay/*, allow
+        - p, proj:nexuspay:deployer, applications, sync, nexuspay/*, allow

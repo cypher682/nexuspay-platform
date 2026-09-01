@@ -1,0 +1,10 @@
+apiVersion: v2
+name: auth-service
+description: NexusPay identity service (JWT issuance, refresh rotation, TOTP MFA, RBAC)
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+dependencies:
+  - name: nexuspay-lib
+    version: 0.1.0
+    repository: file://../../nexuspay-lib

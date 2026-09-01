@@ -1,0 +1,57 @@
+fullnameOverride: auth-service
+
+replicaCount: 2
+terminationGracePeriodSeconds: 25
+
+image:
+  repository: nexuspay/auth-service
+  tag: "1.0.0"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 4001
+
+env:
+  - name: LOG_LEVEL
+    value: info
+  - name: REDIS_URL
+    value: redis://redis-master.nexuspay-data.svc.cluster.local:6379
+  - name: MFA_ISSUER
+    value: NexusPay
+  - name: DATABASE_URL
+    valueFrom:
+      secretKeyRef:
+        name: auth-db
+        key: url
+  - name: JWT_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: nexuspay-shared
+        key: jwt-secret
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 192Mi
+  limits:
+    cpu: 500m
+    memory: 384Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 75
+
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 1
+
+networkPolicy:
+  enabled: true
+  mode: gateway-only
+
+serviceMonitor: # enable only after prom-client middleware lands (kube-prom-stack step)
+  enabled: false
+  interval: 30s

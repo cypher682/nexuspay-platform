@@ -1,0 +1,60 @@
+fullnameOverride: payments-service
+
+replicaCount: 2
+terminationGracePeriodSeconds: 40
+
+image:
+  repository: nexuspay/payments-service
+  tag: "1.0.0"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 4002
+
+env:
+  - name: LOG_LEVEL
+    value: info
+  - name: REDIS_URL
+    value: redis://redis-master.nexuspay-data.svc.cluster.local:6379
+  - name: DATABASE_URL
+    valueFrom:
+      secretKeyRef:
+        name: payments-db
+        key: url
+  - name: JWT_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: nexuspay-shared
+        key: jwt-secret
+  - name: PROVIDER_WEBHOOK_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: nexuspay-shared
+        key: provider-webhook-secret
+
+resources:
+  requests:
+    cpu: 150m
+    memory: 256Mi
+  limits:
+    cpu: "1"
+    memory: 512Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 1
+
+networkPolicy:
+  enabled: true
+  mode: gateway-only
+
+serviceMonitor: # enable only after prom-client middleware lands (kube-prom-stack step)
+  enabled: false
+  interval: 30s

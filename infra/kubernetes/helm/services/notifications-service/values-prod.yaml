@@ -1,0 +1,25 @@
+image:
+  repository: acrname.azurecr.io/nexuspay/notifications-service
+  tag: set-by-ci
+  pullPolicy: Always
+
+replicaCount: 2
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 6
+
+podDisruptionBudget:
+  enabled: true
+
+resources:
+  requests:
+    cpu: 150m
+    memory: 256Mi
+  limits:
+    cpu: "1"
+    memory: 512Mi
+
+# Real SMTP endpoint in prod is injected by CI as a patch on env[SMTP_URL]
+# (secretKeyRef -> notifications-smtp/url); mock senders stay in dev only.

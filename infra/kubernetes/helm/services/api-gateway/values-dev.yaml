@@ -1,0 +1,11 @@
+# Dev overlay (minikube): locally built images, modest footprint.
+image:
+  repository: nexuspay/api-gateway
+  tag: dev
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+
+autoscaling:
+  minReplicas: 2
+  maxReplicas: 4

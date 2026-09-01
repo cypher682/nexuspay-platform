@@ -1,0 +1,6 @@
+image:
+  repository: nexuspay/notifications-service
+  tag: dev
+  pullPolicy: IfNotPresent
+
+replicaCount: 1

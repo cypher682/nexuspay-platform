@@ -1,0 +1,55 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: nexuspay
+  namespace: argocd
+spec:
+  goTemplate: true
+  generators:
+    - matrix:
+        generators:
+          # One entry per service chart under helm/services/*
+          - git:
+              repoURL: https://github.com/cypher682/nexuspay-platform.git
+              revision: main
+              directories:
+                - path: infra/kubernetes/helm/services/*
+          # Cross-product with environments
+          - list:
+              elements:
+                - env: dev
+                  namespace: nexuspay-dev
+                - env: prod
+                  namespace: nexuspay-prod
+  template:
+    metadata:
+      name: "nexuspay-{{ .path.basename }}-{{ .env }}"
+      labels:
+        app.kubernetes.io/part-of: nexuspay
+        environment: "{{ .env }}"
+    spec:
+      project: nexuspay
+      source:
+        repoURL: https://github.com/cypher682/nexuspay-platform.git
+        targetRevision: main
+        path: "{{ .path.path }}"
+        helm:
+          releaseName: "{{ .path.basename }}"
+          valueFiles:
+            - values.yaml
+            - "values-{{ .env }}.yaml"
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: "{{ .namespace }}"
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+        retry:
+          limit: 3
+          backoff:
+            duration: 20s
+            factor: 2
+            maxDuration: 5m

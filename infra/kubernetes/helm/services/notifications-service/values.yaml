@@ -1,0 +1,64 @@
+fullnameOverride: notifications-service
+
+replicaCount: 1
+terminationGracePeriodSeconds: 40
+
+image:
+  repository: nexuspay/notifications-service
+  tag: "1.0.0"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 4003
+
+env:
+  - name: LOG_LEVEL
+    value: info
+  - name: SMS_PROVIDER
+    value: mock
+  - name: SMTP_URL
+    value: smtp://mailpit.nexuspay-data.svc.cluster.local:1025
+  - name: SMTP_FROM
+    value: NexusPay <no-reply@nexuspay.local>
+  - name: RABBITMQ_URL
+    valueFrom:
+      secretKeyRef:
+        name: rabbitmq-url
+        key: url
+  - name: DATABASE_URL
+    valueFrom:
+      secretKeyRef:
+        name: notifications-db
+        key: url
+  - name: INTERNAL_API_KEY
+    valueFrom:
+      secretKeyRef:
+        name: nexuspay-shared
+        key: internal-api-key
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 192Mi
+  limits:
+    cpu: 500m
+    memory: 384Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 75
+
+podDisruptionBudget:
+  enabled: false
+  maxUnavailable: 1
+
+networkPolicy:
+  enabled: false
+  mode: gateway-only
+
+serviceMonitor: # enable only after prom-client middleware lands (kube-prom-stack step)
+  enabled: false
+  interval: 30s

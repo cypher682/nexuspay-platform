@@ -1,0 +1,19 @@
+{
+  "name": "nexuspay-platform",
+  "version": "1.0.0",
+  "private": true,
+  "description": "NexusPay fintech platform — 4 microservices + infrastructure",
+  "scripts": {
+    "openapi:validate": "tsx scripts/validate-openapi.ts",
+    "openapi:lint": "spectral lint docs/openapi.yaml",
+    "seed:test-user": "tsx scripts/seed-test-user.ts",
+    "test:k6:smoke": "k6 run k6/smoke-test.js",
+    "test:k6:auth": "k6 run k6/auth-login.js",
+    "test:k6:payment": "k6 run k6/payment-create.js"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "yaml": "^2.6.1"
+  }
+}

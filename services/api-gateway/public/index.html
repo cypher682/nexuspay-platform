@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>NexusPay API Docs</title>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
+  <style>
+    body { margin: 0; padding: 0; }
+    #header { background: #1a1a2e; color: #fff; padding: 16px 24px; font-family: system-ui, sans-serif; }
+    #header h1 { margin: 0; font-size: 20px; }
+    #header p { margin: 4px 0 0; opacity: 0.7; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div id="header">
+    <h1>NexusPay Platform API</h1>
+    <p>v1.0.0 &mdash; OpenAPI 3.1 Specification</p>
+  </div>
+  <div id="swagger-ui"></div>
+  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+  <script>
+    SwaggerUIBundle({
+      url: "/docs/openapi.yaml",
+      dom_id: "#swagger-ui",
+      deepLinking: true,
+      presets: [SwaggerUIBundle.presets.apis, SwaggerUIBundle.SwaggerUIStandalonePreset],
+      layout: "BaseLayout"
+    });
+  </script>
+</body>
+</html>

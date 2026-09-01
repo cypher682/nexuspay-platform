@@ -1,0 +1,114 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserStatus {
+  ACTIVE
+  LOCKED
+  DISABLED
+}
+
+model User {
+  id                  String     @id @default(cuid())
+  email               String     @unique
+  passwordHash        String
+  fullName            String?
+  status              UserStatus @default(ACTIVE)
+  isVerified          Boolean    @default(false)
+  verificationToken   String?    @unique
+  mfaEnabled          Boolean    @default(false)
+  roles               UserRole[]
+  refreshFamilies     RefreshTokenFamily[]
+  auditLogs           AuditLog[]
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+
+  @@map("users")
+  @@index([email])
+}
+
+model Role {
+  id          String       @id @default(cuid())
+  name        String       @unique
+  description String?
+  users       UserRole[]
+  permissions RolePermission[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id    String @id @default(cuid())
+  name  String @unique
+  roles RolePermission[]
+
+  @@map("permissions")
+}
+
+model UserRole {
+  userId String
+  roleId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model MfaConfig {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  secret    String
+  isEnabled Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@map("mfa_configs")
+  @@index([userId, isEnabled])
+}
+
+model RefreshTokenFamily {
+  id            String   @id @default(cuid())
+  userId        String
+  familyId      String   @unique
+  isRevoked     Boolean  @default(false)
+  lastTokenHash String
+  createdAt     DateTime @default(now())
+  revokedAt     DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_token_families")
+  @@index([userId])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  eventType  String
+  status     String   @default("success")
+  ipAddress  String?
+  userAgent  String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("audit_logs")
+  @@index([eventType, createdAt])
+  @@index([userId, createdAt])
+}

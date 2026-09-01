@@ -1,0 +1,21 @@
+# Prod overlay (AKS): ACR images pulled by digest-pinned tags set in CI,
+# wider autoscaling headroom, guaranteed floor of replicas.
+image:
+  # CI replaces the tag with the pushed digest, e.g. "1.0.0@sha256:..."
+  repository: acrname.azurecr.io/nexuspay/api-gateway
+  tag: set-by-ci
+  pullPolicy: Always
+
+replicaCount: 3
+
+resources:
+  requests:
+    cpu: 150m
+    memory: 256Mi
+  limits:
+    cpu: "1"
+    memory: 512Mi
+
+autoscaling:
+  minReplicas: 3
+  maxReplicas: 10

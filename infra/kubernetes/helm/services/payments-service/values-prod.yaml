@@ -1,0 +1,18 @@
+image:
+  repository: acrname.azurecr.io/nexuspay/payments-service
+  tag: set-by-ci
+  pullPolicy: Always
+
+replicaCount: 3
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 320Mi
+  limits:
+    cpu: "1"
+    memory: 640Mi
+
+autoscaling:
+  minReplicas: 3
+  maxReplicas: 10

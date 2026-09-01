@@ -1,0 +1,261 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/nexuspay
+
+jobs:
+  # ──────────────────────────────────────────────
+  # Detect which services changed
+  # ──────────────────────────────────────────────
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      gateway: ${{ steps.filter.outputs.gateway }}
+      auth: ${{ steps.filter.outputs.auth }}
+      payments: ${{ steps.filter.outputs.payments }}
+      notifications: ${{ steps.filter.outputs.notifications }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            gateway:
+              - 'services/api-gateway/**'
+              - 'docs/openapi.yaml'
+            auth:
+              - 'services/auth-service/**'
+            payments:
+              - 'services/payments-service/**'
+            notifications:
+              - 'services/notifications-service/**'
+
+  # ──────────────────────────────────────────────
+  # Lint + Typecheck (all services, always runs)
+  # ──────────────────────────────────────────────
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            services/api-gateway/package-lock.json
+            services/auth-service/package-lock.json
+            services/payments-service/package-lock.json
+            services/notifications-service/package-lock.json
+
+      - name: Install dependencies and lint/typecheck each service
+        run: |
+          for svc in api-gateway auth-service payments-service notifications-service; do
+            echo "::group::$svc"
+            cd services/$svc
+            npm ci --no-audit --no-fund
+            npm run lint
+            npx tsc --noEmit
+            cd ../..
+            echo "::endgroup::"
+          done
+
+  # ──────────────────────────────────────────────
+  # Unit tests (matrix: only changed services)
+  # ──────────────────────────────────────────────
+  test:
+    needs: changes
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: api-gateway
+            port: 4000
+            changed: ${{ needs.changes.outputs.gateway }}
+          - service: auth-service
+            port: 4001
+            changed: ${{ needs.changes.outputs.auth }}
+          - service: payments-service
+            port: 4002
+            changed: ${{ needs.changes.outputs.payments }}
+          - service: notifications-service
+            port: 4003
+            changed: ${{ needs.changes.outputs.notifications }}
+    steps:
+      - uses: actions/checkout@v4
+        if: matrix.changed == 'true'
+      - uses: actions/setup-node@v4
+        if: matrix.changed == 'true'
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: services/${{ matrix.service }}/package-lock.json
+
+      - name: Test ${{ matrix.service }}
+        if: matrix.changed == 'true'
+        working-directory: services/${{ matrix.service }}
+        run: |
+          npm ci --no-audit --no-fund
+          npm test -- --coverage --coverageReporters=text-summary
+
+  # ──────────────────────────────────────────────
+  # Docker build + push to GHCR (only changed)
+  # ──────────────────────────────────────────────
+  build:
+    needs: [changes, test]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: api-gateway
+            port: 4000
+            changed: ${{ needs.changes.outputs.gateway }}
+          - service: auth-service
+            port: 4001
+            changed: ${{ needs.changes.outputs.auth }}
+          - service: payments-service
+            port: 4002
+            changed: ${{ needs.changes.outputs.payments }}
+          - service: notifications-service
+            port: 4003
+            changed: ${{ needs.changes.outputs.notifications }}
+    steps:
+      - uses: actions/checkout@v4
+        if: matrix.changed == 'true'
+
+      - name: Log in to GHCR
+        if: matrix.changed == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push ${{ matrix.service }}
+        if: matrix.changed == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: services/${{ matrix.service }}
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Trivy scan ${{ matrix.service }} image
+        if: matrix.changed == 'true'
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:${{ github.sha }}
+          severity: CRITICAL
+          exit-code: 1
+          ignore-unfixed: true
+          format: table
+
+  # ──────────────────────────────────────────────
+  # Dependency audit + supply chain scan
+  # ──────────────────────────────────────────────
+  audit:
+    runs-on: ubuntu-latest
+    needs: changes
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: npm audit (all services)
+        run: |
+          FAILED=0
+          for svc in api-gateway auth-service payments-service notifications-service; do
+            echo "::group::$svc audit"
+            cd services/$svc
+            if [ -f package-lock.json ]; then npm ci --ignore-scripts 2>/dev/null; fi
+            npm audit --audit-level=high || FAILED=1
+            cd ../..
+            echo "::endgroup::"
+          done
+          exit $FAILED
+
+  # ──────────────────────────────────────────────
+  # OpenAPI validation
+  # ──────────────────────────────────────────────
+  openapi:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install root dependencies (tsx, yaml)
+        run: npm install
+
+      - name: Validate OpenAPI spec against code
+        run: npx tsx scripts/validate-openapi.ts
+
+      - name: Spectral lint
+        uses: stoplightio/spectral-action@latest
+        with:
+          file_glob: docs/openapi.yaml
+          spectral_ruleset: .spectral.yaml
+
+  # ──────────────────────────────────────────────
+  # k6 smoke test (lightweight CI validation)
+  # ──────────────────────────────────────────────
+  k6-smoke:
+    needs: lint
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare .env from example
+        run: cp .env.example .env
+
+      - name: Start full stack via Docker Compose
+        run: |
+          docker compose up -d
+          for i in $(seq 1 120); do
+            if [ "$(docker inspect -f '{{.State.Health.Status}}' $(docker compose ps -q auth-service) 2>/dev/null)" = "healthy" ]; then
+              echo "auth-service healthy"
+              break
+            fi
+            sleep 2
+            if [ "$i" = "120" ]; then echo "Timed out waiting for services"; docker compose logs --tail=50; exit 1; fi
+          done
+
+      - name: Apply Prisma migrations
+        run: |
+          for svc in auth-service payments-service notifications-service; do
+            echo "::group::migrate $svc"
+            cd services/$svc
+            npm ci --no-audit --no-fund
+            DATABASE_URL="postgresql://nexuspay:nexuspay@localhost:5433/nexuspay_${svc%-service}?schema=public" \
+              npx prisma migrate deploy
+            cd ../..
+            echo "::endgroup::"
+          done
+
+      - name: Run k6 smoke test
+        uses: grafana/k6-action@v0.3.1
+        with:
+          filename: k6/smoke-test.js
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v

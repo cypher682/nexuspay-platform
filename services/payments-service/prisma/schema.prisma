@@ -1,0 +1,108 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum PaymentStatus {
+  INITIATED
+  PENDING
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+}
+
+enum PaymentProvider {
+  MOCK_CARD
+  MOCK_TRANSFER
+}
+
+enum LedgerAccountType {
+  CUSTOMER_SOURCE
+  PAYMENTS_REVENUE
+  PAYMENTS_FEES
+  CUSTOMER_REFUND
+}
+
+enum LedgerDirection {
+  DEBIT
+  CREDIT
+}
+
+model Payment {
+  id            String          @id @default(cuid())
+  reference     String          @unique
+  userId        String
+  amountMinor   Int
+  currency      String          @default("NGN")
+  provider      PaymentProvider
+  status        PaymentStatus   @default(INITIATED)
+  providerRef   String?
+  failureReason String?
+  capturedAt    DateTime?
+  refundedAt    DateTime?
+  metadata      Json?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  ledgerEntries LedgerEntry[]
+
+  @@map("payments")
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+}
+
+model LedgerEntry {
+  id          String            @id @default(cuid())
+  paymentId   String
+  account     LedgerAccountType
+  direction   LedgerDirection
+  amountMinor Int
+  currency    String
+  payment     Payment           @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  createdAt   DateTime          @default(now())
+
+  @@map("ledger_entries")
+  @@index([paymentId])
+}
+
+model WebhookEvent {
+  id             String     @id @default(cuid())
+  eventId        String     @unique
+  type           String
+  signatureValid Boolean
+  processedAt    DateTime?
+  payload        Json
+  createdAt      DateTime   @default(now())
+
+  @@map("webhook_events")
+}
+
+model IdempotencyRecord {
+  id           String @id @default(cuid())
+  key          String
+  userId       String
+  endpoint     String
+  responseBody Json
+  statusCode   Int
+  createdAt    DateTime @default(now())
+
+  @@map("idempotency_records")
+  @@unique([key, userId, endpoint])
+}
+
+model ReconciliationRun {
+  id             String    @id @default(cuid())
+  startedAt      DateTime  @default(now())
+  finishedAt     DateTime?
+  totalChecked   Int       @default(0)
+  mismatchCount  Int       @default(0)
+  status         String    @default("RUNNING")
+  details        Json?
+
+  @@map("reconciliation_runs")
+}

@@ -1,0 +1,135 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: nexuspay
+      POSTGRES_PASSWORD: nexuspay
+      POSTGRES_MULTIPLE_DATABASES: nexuspay_auth,nexuspay_payments,nexuspay_notifications
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./scripts/init-multi-db.sh:/docker-entrypoint-initdb.d/init-multi-db.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexuspay"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: nexuspay
+      RABBITMQ_DEFAULT_PASS: nexuspay
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmqdata:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  auth-service:
+    build: ./services/auth-service
+    env_file: ./.env
+    environment:
+      PORT: 4001
+      DATABASE_URL: postgresql://nexuspay:nexuspay@postgres:5432/nexuspay_auth?schema=public
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "4001:4001"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4001/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  payments-service:
+    build: ./services/payments-service
+    env_file: ./.env
+    environment:
+      PORT: 4002
+      DATABASE_URL: postgresql://nexuspay:nexuspay@postgres:5432/nexuspay_payments?schema=public
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "4002:4002"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4002/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  notifications-service:
+    build: ./services/notifications-service
+    env_file: ./.env
+    environment:
+      PORT: 4003
+      DATABASE_URL: postgresql://nexuspay:nexuspay@postgres:5432/nexuspay_notifications?schema=public
+      RABBITMQ_URL: amqp://nexuspay:nexuspay@rabbitmq:5672
+    ports:
+      - "4003:4003"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4003/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  api-gateway:
+    build: ./services/api-gateway
+    env_file: ./.env
+    environment:
+      PORT: 4000
+      REDIS_URL: redis://redis:6379
+      AUTH_SERVICE_URL: http://auth-service:4001
+      PAYMENTS_SERVICE_URL: http://payments-service:4002
+      NOTIFICATIONS_SERVICE_URL: http://notifications-service:4003
+    ports:
+      - "4000:4000"
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      payments-service:
+        condition: service_healthy
+      notifications-service:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  redisdata:
+  rabbitmqdata:

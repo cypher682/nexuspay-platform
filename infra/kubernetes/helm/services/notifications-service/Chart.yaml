@@ -1,0 +1,10 @@
+apiVersion: v2
+name: notifications-service
+description: NexusPay notification delivery (RabbitMQ consumer, templates, email/SMS senders)
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+dependencies:
+  - name: nexuspay-lib
+    version: 0.1.0
+    repository: file://../../nexuspay-lib

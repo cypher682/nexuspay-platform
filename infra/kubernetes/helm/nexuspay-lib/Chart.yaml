@@ -1,0 +1,8 @@
+apiVersion: v2
+name: nexuspay-lib
+description: Shared NexusPay building blocks (deployment, service, HPA, PDB, NetworkPolicy, ServiceMonitor)
+type: library
+version: 0.1.0
+appVersion: "1.0.0"
+maintainers:
+  - name: cypher682

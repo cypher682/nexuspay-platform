@@ -1,0 +1,18 @@
+image:
+  repository: acrname.azurecr.io/nexuspay/auth-service
+  tag: set-by-ci
+  pullPolicy: Always
+
+replicaCount: 3
+
+resources:
+  requests:
+    cpu: 150m
+    memory: 256Mi
+  limits:
+    cpu: "1"
+    memory: 512Mi
+
+autoscaling:
+  minReplicas: 3
+  maxReplicas: 8

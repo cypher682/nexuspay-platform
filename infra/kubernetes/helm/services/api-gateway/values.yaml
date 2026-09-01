@@ -1,0 +1,63 @@
+fullnameOverride: api-gateway
+
+replicaCount: 2
+terminationGracePeriodSeconds: 25
+
+image:
+  repository: nexuspay/api-gateway
+  tag: "1.0.0"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 4000
+
+env:
+  - name: LOG_LEVEL
+    value: info
+  - name: REDIS_URL
+    value: redis://redis-master.nexuspay-data.svc.cluster.local:6379
+  - name: AUTH_SERVICE_URL
+    value: http://auth-service:4001
+  - name: PAYMENTS_SERVICE_URL
+    value: http://payments-service:4002
+  - name: NOTIFICATIONS_SERVICE_URL
+    value: http://notifications-service:4003
+  - name: CORS_ORIGIN
+    value: http://localhost:3000
+  - name: JWT_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: nexuspay-shared
+        key: jwt-secret
+  - name: INTERNAL_API_KEY
+    valueFrom:
+      secretKeyRef:
+        name: nexuspay-shared
+        key: internal-api-key
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 192Mi
+  limits:
+    cpu: 500m
+    memory: 384Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 75
+
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 1
+
+networkPolicy:
+  enabled: true
+  mode: open
+
+serviceMonitor: # enable only after prom-client middleware lands (kube-prom-stack step)
+  enabled: false
+  interval: 30s

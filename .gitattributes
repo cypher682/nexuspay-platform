@@ -1,0 +1,14 @@
+# Normalize all line endings to LF on checkout
+* text=auto eol=lf
+
+# Force LF for shell scripts and Dockerfiles
+*.sh text eol=lf
+Dockerfile text eol=lf
+Dockerfile.worker text eol=lf
+docker-compose*.yml text eol=lf
+.github/workflows/*.yml text eol=lf
+
+# Treat these as binary
+*.png binary
+*.jpg binary
+*.jpeg binary

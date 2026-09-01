@@ -1,0 +1,1354 @@
+openapi: 3.1.0
+info:
+  title: NexusPay Platform API
+  version: 1.0.0
+  description: |
+    NexusPay is a modern payment platform providing wallet, card, and transfer capabilities.
+
+    All monetary amounts are expressed in integer minor units (kobo for NGN, cents for USD).
+
+    **Authentication**: Most endpoints require a Bearer JWT token obtained via the `/v1/auth/login` or `/v1/auth/register` flows.
+
+    **Idempotency**: Payment creation requests require an `Idempotency-Key` header to prevent duplicate transactions.
+
+    **Error Format**: All errors follow a standard shape:
+    ```json
+    { "error": "ERROR_CODE", "message": "Human-readable message", "requestId": "optional-trace-id" }
+    ```
+  contact:
+    name: NexusPay Support
+    email: support@nexuspay.dev
+    url: https://nexuspay.dev
+  license:
+    name: Proprietary
+    url: https://nexuspay.dev/license
+
+servers:
+  - url: http://localhost:4000
+    description: Local development (API Gateway)
+
+tags:
+  - name: Health
+    description: Service health and readiness checks
+  - name: Auth
+    description: Authentication, registration, and token management
+  - name: Users
+    description: User profile management
+  - name: Payments
+    description: Payment creation, retrieval, capture, and refunds
+  - name: Notifications
+    description: Notification dispatch and retrieval
+  - name: Webhooks
+    description: Inbound webhook receiver (direct to payments-service)
+
+paths:
+  # ── Health ──────────────────────────────────────────────────────────
+  /health:
+    get:
+      operationId: getHealth
+      tags: [Health]
+      summary: Basic liveness check
+      description: Returns 200 when the gateway process is running.
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+              example:
+                status: ok
+
+  /health/live:
+    get:
+      operationId: getHealthLive
+      tags: [Health]
+      summary: Liveness probe
+      description: Kubernetes liveness probe endpoint.
+      responses:
+        "200":
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+              example:
+                status: ok
+
+  /health/ready:
+    get:
+      operationId: getHealthReady
+      tags: [Health]
+      summary: Readiness probe
+      description: |
+        Returns degraded when downstream dependencies (e.g. Redis) are unavailable.
+      responses:
+        "200":
+          description: Readiness status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessStatus"
+              examples:
+                ready:
+                  summary: All dependencies healthy
+                  value:
+                    status: ready
+                    checks:
+                      redis: ok
+                degraded:
+                  summary: One or more dependencies unhealthy
+                  value:
+                    status: degraded
+                    checks:
+                      redis: unavailable
+
+  # ── Auth (public) ───────────────────────────────────────────────────
+  /v1/auth/register:
+    post:
+      operationId: registerUser
+      tags: [Auth]
+      summary: Register a new user
+      description: |
+        Creates a new user account and returns tokens for immediate login.
+        Password must be at least 10 characters and contain uppercase, lowercase, and a digit.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+            example:
+              email: alice@example.com
+              password: Secure1234!
+              fullName: Alice Johnson
+      responses:
+        "201":
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+              example:
+                user:
+                  id: usr_a1b2c3d4
+                  email: alice@example.com
+                  fullName: Alice Johnson
+                  status: ACTIVE
+                  isVerified: false
+                  mfaEnabled: false
+                  createdAt: "2026-08-25T10:00:00Z"
+                accessToken: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+                refreshToken: rt_1a2b3c4d5e6f7g8h9i0jklmnopqrstuvwx
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /v1/auth/login:
+    post:
+      operationId: loginUser
+      tags: [Auth]
+      summary: Authenticate a user
+      description: |
+        Returns access and refresh tokens on success.
+        If MFA is enabled the response contains a `challengeToken` instead of tokens,
+        and the caller must POST to `/v1/auth/mfa/verify`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+            example:
+              email: alice@example.com
+              password: Secure1234!
+      responses:
+        "200":
+          description: Authentication successful
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/AuthResponse"
+                  - $ref: "#/components/schemas/MfaChallenge"
+              examples:
+                success:
+                  summary: Direct login (no MFA)
+                  value:
+                    user:
+                      id: usr_a1b2c3d4
+                      email: alice@example.com
+                      fullName: Alice Johnson
+                      status: ACTIVE
+                      isVerified: true
+                      mfaEnabled: false
+                      createdAt: "2026-08-25T10:00:00Z"
+                    accessToken: eyJhbGciOiJIUzI1NiJ9...
+                    refreshToken: rt_abcdef1234567890abcdef1234567890
+                mfaRequired:
+                  summary: MFA challenge issued
+                  value:
+                    mfaRequired: true
+                    challengeToken: ct_01H8X9Y7Z6W5V4U3T2S1R0Q9P8O7N6M5L4K3J2H1G0F
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/auth/refresh:
+    post:
+      operationId: refreshToken
+      tags: [Auth]
+      summary: Exchange refresh token for new token pair
+      description: Returns a new access and refresh token. The previous refresh token is invalidated.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+            example:
+              refreshToken: rt_abcdef1234567890abcdef1234567890
+      responses:
+        "200":
+          description: Tokens refreshed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenPair"
+              example:
+                accessToken: eyJhbGciOiJIUzI1NiJ9...
+                refreshToken: rt_zyxwvu0987654321zyxwvu0987654321
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/auth/mfa/verify:
+    post:
+      operationId: verifyMfa
+      tags: [Auth]
+      summary: Verify MFA code
+      description: Completes the MFA login flow by exchanging a challenge token and TOTP code for tokens.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MfaVerifyRequest"
+            example:
+              challengeToken: ct_01H8X9Y7Z6W5V4U3T2S1R0Q9P8O7N6M5L4K3J2H1G0F
+              code: "482916"
+      responses:
+        "200":
+          description: MFA verified
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+              example:
+                user:
+                  id: usr_a1b2c3d4
+                  email: alice@example.com
+                  fullName: Alice Johnson
+                  status: ACTIVE
+                  isVerified: true
+                  mfaEnabled: true
+                  createdAt: "2026-08-25T10:00:00Z"
+                accessToken: eyJhbGciOiJIUzI1NiJ9...
+                refreshToken: rt_abcdef1234567890abcdef1234567890
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/auth/logout:
+    post:
+      operationId: logoutUser
+      tags: [Auth]
+      summary: Invalidate refresh token
+      description: Revokes the given refresh token (or current session if omitted). Returns 204 on success.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LogoutRequest"
+            example:
+              refreshToken: rt_abcdef1234567890abcdef1234567890
+      responses:
+        "204":
+          description: Logged out
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ── MFA (authenticated) ─────────────────────────────────────────────
+  /v1/mfa/setup:
+    post:
+      operationId: setupMfa
+      tags: [Auth]
+      summary: Generate MFA secret
+      description: |
+        Returns a TOTP secret and otpauth URL for the user to scan into their authenticator app.
+        The user must confirm setup by verifying a code via `/v1/auth/mfa/verify`.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: MFA secret generated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MfaSetupResponse"
+              example:
+                secret: JBSWY3DPEHPK3PXP
+                otpauthUrl: otpauth://totp/NexusPay:alice@example.com?secret=JBSWY3DPEHPK3PXP&issuer=NexusPay
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/mfa/disable:
+    post:
+      operationId: disableMfa
+      tags: [Auth]
+      summary: Disable MFA
+      description: Disables TOTP-based MFA for the authenticated user. Requires password confirmation.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MfaDisableRequest"
+            example:
+              password: Secure1234!
+      responses:
+        "200":
+          description: MFA disabled
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [disabled]
+                properties:
+                  disabled:
+                    type: boolean
+                    example: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ── Users ───────────────────────────────────────────────────────────
+  /v1/users/me:
+    get:
+      operationId: getMe
+      tags: [Users]
+      summary: Get current user profile
+      description: Returns the full profile of the authenticated user including roles.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+              example:
+                id: usr_a1b2c3d4
+                email: alice@example.com
+                fullName: Alice Johnson
+                status: ACTIVE
+                isVerified: true
+                mfaEnabled: false
+                createdAt: "2026-08-25T10:00:00Z"
+                roles: ["user"]
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+    patch:
+      operationId: updateMe
+      tags: [Users]
+      summary: Update current user profile
+      description: Partially update the authenticated user's profile.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProfileRequest"
+            example:
+              fullName: Alice Smith
+      responses:
+        "200":
+          description: Profile updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfileUpdate"
+              example:
+                id: usr_a1b2c3d4
+                email: alice@example.com
+                fullName: Alice Smith
+                updatedAt: "2026-08-25T12:00:00Z"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  # ── Payments ────────────────────────────────────────────────────────
+  /v1/payments:
+    post:
+      operationId: createPayment
+      tags: [Payments]
+      summary: Initiate a payment
+      description: |
+        Creates a new payment intent. Requires an `Idempotency-Key` header (8-128 chars).
+        Amounts are in integer minor units (e.g. 5000 = NGN 50.00).
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePaymentRequest"
+            example:
+              amountMinor: 5000
+              currency: NGN
+              provider: MOCK_CARD
+              metadata:
+                orderId: ord_xyz789
+      responses:
+        "201":
+          description: Payment created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Payment"
+              example:
+                id: pay_abc123def456
+                reference: NXSPAY-ABC123
+                userId: usr_a1b2c3d4
+                amountMinor: 5000
+                currency: NGN
+                provider: MOCK_CARD
+                status: PENDING
+                metadata:
+                  orderId: ord_xyz789
+                createdAt: "2026-08-25T10:00:00Z"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+    get:
+      operationId: listPayments
+      tags: [Payments]
+      summary: List payments
+      description: Paginated list of payments for the authenticated user. Supports cursor-based pagination.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+          description: Number of results per page
+          example: 20
+        - name: cursor
+          in: query
+          schema:
+            type: string
+          description: Cursor for the next page (obtained from previous response)
+          example: pay_abc123def456
+      responses:
+        "200":
+          description: Payment list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentList"
+              example:
+                payments:
+                  - id: pay_abc123def456
+                    reference: NXSPAY-ABC123
+                    userId: usr_a1b2c3d4
+                    amountMinor: 5000
+                    currency: NGN
+                    provider: MOCK_CARD
+                    status: COMPLETED
+                    metadata: {}
+                    createdAt: "2026-08-25T10:00:00Z"
+                nextCursor: pay_def789ghi012
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/payments/{id}:
+    get:
+      operationId: getPayment
+      tags: [Payments]
+      summary: Get payment details
+      description: Returns full payment details including ledger entries.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PaymentId"
+      responses:
+        "200":
+          description: Payment details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentDetail"
+              example:
+                id: pay_abc123def456
+                reference: NXSPAY-ABC123
+                userId: usr_a1b2c3d4
+                amountMinor: 5000
+                currency: NGN
+                provider: MOCK_CARD
+                status: COMPLETED
+                providerRef: prov_ref_789
+                capturedAt: "2026-08-25T10:05:00Z"
+                refundedAt: null
+                metadata: {}
+                ledgerEntries:
+                  - id: led_001
+                    type: DEBIT
+                    amountMinor: 5000
+                    currency: NGN
+                    createdAt: "2026-08-25T10:00:00Z"
+                createdAt: "2026-08-25T10:00:00Z"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/payments/{id}/capture:
+    post:
+      operationId: capturePayment
+      tags: [Payments]
+      summary: Capture a payment
+      description: Captures a previously authorized payment.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PaymentId"
+      responses:
+        "200":
+          description: Payment captured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Payment"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /v1/payments/{id}/refund:
+    post:
+      operationId: refundPayment
+      tags: [Payments]
+      summary: Refund a payment
+      description: |
+        Fully refunds a captured payment. Requires the `payments:refund` or `*` scope.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PaymentId"
+      responses:
+        "200":
+          description: Payment refunded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Payment"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  # ── Notifications ───────────────────────────────────────────────────
+  /v1/notifications:
+    post:
+      operationId: createNotification
+      tags: [Notifications]
+      summary: Send a notification
+      description: |
+        Dispatches a notification via the specified channel. The gateway injects the
+        `X-Internal-Api-Key` header when forwarding to the notifications service.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateNotificationRequest"
+            example:
+              userId: usr_a1b2c3d4
+              channel: EMAIL
+              templateKey: payment.received
+              recipient: alice@example.com
+              payload:
+                amount: "50.00"
+                currency: NGN
+      responses:
+        "202":
+          description: Notification accepted for delivery
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationAccepted"
+              example:
+                id: notif_xyz789
+                status: QUEUED
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+    get:
+      operationId: listNotifications
+      tags: [Notifications]
+      summary: List notifications
+      description: Paginated list of notifications for the authenticated user.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+          example: 20
+        - name: cursor
+          in: query
+          schema:
+            type: string
+          example: notif_xyz789
+      responses:
+        "200":
+          description: Notification list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationList"
+              example:
+                notifications:
+                  - id: notif_xyz789
+                    channel: EMAIL
+                    templateKey: payment.received
+                    recipient: alice@example.com
+                    status: DELIVERED
+                    payload:
+                      amount: "50.00"
+                      currency: NGN
+                    createdAt: "2026-08-25T10:05:00Z"
+                    attempts:
+                      - status: DELIVERED
+                        attemptedAt: "2026-08-25T10:05:01Z"
+                nextCursor: null
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/notifications/{id}:
+    get:
+      operationId: getNotification
+      tags: [Notifications]
+      summary: Get notification details
+      description: Returns a single notification with delivery attempt history.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          example: notif_xyz789
+      responses:
+        "200":
+          description: Notification details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationDetail"
+              example:
+                id: notif_xyz789
+                channel: EMAIL
+                templateKey: payment.received
+                recipient: alice@example.com
+                status: DELIVERED
+                payload:
+                  amount: "50.00"
+                  currency: NGN
+                createdAt: "2026-08-25T10:05:00Z"
+                attempts:
+                  - status: DELIVERED
+                    attemptedAt: "2026-08-25T10:05:01Z"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ── Gateway Aggregation ─────────────────────────────────────────────
+  /v1/me/summary:
+    get:
+      operationId: getMySummary
+      tags: [Users]
+      summary: Get aggregated user summary
+      description: |
+        Aggregates data from multiple internal services (users-service, payments-service).
+        Each sub-response includes a `source` field and either `data` or `error`.
+        Useful for dashboards and mobile app home screens.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Aggregated summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserSummary"
+              example:
+                requestId: req_abc123
+                profile:
+                  source: users-service
+                  data:
+                    id: usr_a1b2c3d4
+                    email: alice@example.com
+                    fullName: Alice Johnson
+                recentPayments:
+                  source: payments-service
+                  data:
+                    - id: pay_abc123def456
+                      amountMinor: 5000
+                      currency: NGN
+                      status: COMPLETED
+                      createdAt: "2026-08-25T10:00:00Z"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ── Webhooks (reference) ────────────────────────────────────────────
+  /v1/webhooks/provider:
+    post:
+      operationId: receiveWebhook
+      tags: [Webhooks]
+      summary: Receive provider webhook
+      description: |
+        **Note:** This endpoint is consumed directly by the payments-service (not routed through the gateway).
+        Included here for reference. Validates the `X-NexusPay-Signature` HMAC header.
+      parameters:
+        - name: X-NexusPay-Signature
+          in: header
+          required: true
+          schema:
+            type: string
+          description: HMAC-SHA256 signature of the raw body
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Raw provider webhook payload
+            example:
+              event: payment.completed
+              data:
+                providerRef: prov_ref_789
+                status: completed
+      responses:
+        "202":
+          description: Webhook accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookAccepted"
+              example:
+                received: true
+                eventId: evt_abc123
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+# ═══════════════════════════════════════════════════════════════════════
+# Components
+# ═══════════════════════════════════════════════════════════════════════
+components:
+  # ── Security Schemes ────────────────────────────────────────────────
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT access token obtained from /v1/auth/login or /v1/auth/register
+
+  # ── Reusable Parameters ─────────────────────────────────────────────
+  parameters:
+    PaymentId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^pay_[a-zA-Z0-9]+$"
+      description: Payment ID
+      example: pay_abc123def456
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+      description: Unique idempotency key to prevent duplicate payment creation
+      example: idem_a1b2c3d4e5f6g7h8i9j0
+
+  # ── Reusable Responses ──────────────────────────────────────────────
+  responses:
+    BadRequest:
+      description: Invalid request payload or parameters
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error: VALIDATION_ERROR
+            message: "Invalid request body: email must be a valid email address"
+            requestId: req_abc123
+    Unauthorized:
+      description: Missing or invalid authentication token
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error: UNAUTHORIZED
+            message: "Invalid or expired access token"
+            requestId: req_abc123
+    Forbidden:
+      description: Authenticated but insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error: FORBIDDEN
+            message: "Missing required scope: payments:refund"
+            requestId: req_abc123
+    NotFound:
+      description: Requested resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error: NOT_FOUND
+            message: "Payment not found"
+            requestId: req_abc123
+    Conflict:
+      description: Resource state conflict (e.g. already captured, duplicate key)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error: CONFLICT
+            message: "Payment has already been captured"
+            requestId: req_abc123
+    UnprocessableEntity:
+      description: Request was well-formed but semantically invalid
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error: UNPROCESSABLE
+            message: "fullName must be between 1 and 120 characters"
+            requestId: req_abc123
+
+  # ── Schemas ─────────────────────────────────────────────────────────
+  schemas:
+
+    # ── Health ──────────────────────────────────────────────────────
+    HealthStatus:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+      example:
+        status: ok
+
+    ReadinessStatus:
+      type: object
+      required: [status, checks]
+      properties:
+        status:
+          type: string
+          enum: [ready, degraded]
+        checks:
+          type: object
+          additionalProperties:
+            type: string
+            enum: [ok, unavailable]
+      example:
+        status: ready
+        checks:
+          redis: ok
+
+    # ── Auth ────────────────────────────────────────────────────────
+    RegisterRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          description: User email address
+        password:
+          type: string
+          minLength: 10
+          description: Password with min 10 chars, must include uppercase, lowercase, and digit
+        fullName:
+          type: string
+          minLength: 1
+          maxLength: 120
+          description: Optional display name
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 1
+
+    RefreshRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+          minLength: 20
+          description: The refresh token to exchange
+
+    LogoutRequest:
+      type: object
+      properties:
+        refreshToken:
+          type: string
+          description: Optional refresh token to revoke
+
+    MfaChallenge:
+      type: object
+      required: [mfaRequired, challengeToken]
+      properties:
+        mfaRequired:
+          type: boolean
+          enum: [true]
+        challengeToken:
+          type: string
+          minLength: 20
+          description: Ephemeral token for the MFA verification step
+
+    MfaVerifyRequest:
+      type: object
+      required: [challengeToken, code]
+      properties:
+        challengeToken:
+          type: string
+          minLength: 20
+        code:
+          type: string
+          pattern: "^\\d{6}$"
+          description: 6-digit TOTP code
+
+    MfaSetupResponse:
+      type: object
+      required: [secret, otpauthUrl]
+      properties:
+        secret:
+          type: string
+          description: Base32-encoded TOTP secret
+        otpauthUrl:
+          type: string
+          format: uri
+          description: URI for authenticator app QR code scanning
+
+    MfaDisableRequest:
+      type: object
+      required: [password]
+      properties:
+        password:
+          type: string
+          minLength: 1
+          description: Current password for confirmation
+
+    TokenPair:
+      type: object
+      required: [accessToken, refreshToken]
+      properties:
+        accessToken:
+          type: string
+          description: JWT access token
+        refreshToken:
+          type: string
+          description: Opaque refresh token
+
+    AuthResponse:
+      type: object
+      required: [user, accessToken, refreshToken]
+      properties:
+        user:
+          $ref: "#/components/schemas/UserSummary_Small"
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+
+    UserSummary_Small:
+      type: object
+      required: [id, email, fullName, status, isVerified, mfaEnabled, createdAt]
+      properties:
+        id:
+          type: string
+          example: usr_a1b2c3d4
+        email:
+          type: string
+          format: email
+        fullName:
+          type: string
+        status:
+          type: string
+          enum: [ACTIVE, SUSPENDED, DEACTIVATED]
+        isVerified:
+          type: boolean
+        mfaEnabled:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+
+    # ── Users ───────────────────────────────────────────────────────
+    UserProfile:
+      type: object
+      required: [id, email, fullName, status, isVerified, mfaEnabled, createdAt, roles]
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+          format: email
+        fullName:
+          type: string
+        status:
+          type: string
+          enum: [ACTIVE, SUSPENDED, DEACTIVATED]
+        isVerified:
+          type: boolean
+        mfaEnabled:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        roles:
+          type: array
+          items:
+            type: string
+          description: Assigned role names (e.g. "user", "admin")
+          example: ["user"]
+
+    UpdateProfileRequest:
+      type: object
+      properties:
+        fullName:
+          type: string
+          minLength: 1
+          maxLength: 120
+
+    UserProfileUpdate:
+      type: object
+      required: [id, email, fullName, updatedAt]
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+          format: email
+        fullName:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+
+    UserSummary:
+      type: object
+      required: [requestId, profile, recentPayments]
+      properties:
+        requestId:
+          type: string
+        profile:
+          $ref: "#/components/schemas/AggregatedField"
+        recentPayments:
+          $ref: "#/components/schemas/AggregatedField"
+
+    AggregatedField:
+      type: object
+      required: [source]
+      properties:
+        source:
+          type: string
+          description: Name of the upstream service
+          example: users-service
+        data:
+          description: Payload when the upstream call succeeded
+        error:
+          type: string
+          description: Error message when the upstream call failed
+
+    # ── Payments ────────────────────────────────────────────────────
+    CreatePaymentRequest:
+      type: object
+      required: [amountMinor, provider]
+      properties:
+        amountMinor:
+          type: integer
+          exclusiveMinimum: 0
+          description: Amount in minor units (kobo, cents, etc.)
+          example: 5000
+        currency:
+          type: string
+          pattern: "^[A-Z]{3}$"
+          default: NGN
+          description: ISO 4217 currency code (3 uppercase letters)
+          example: NGN
+        provider:
+          type: string
+          enum: [MOCK_CARD, MOCK_TRANSFER]
+          description: Payment provider / method
+        metadata:
+          type: object
+          additionalProperties: true
+          description: Arbitrary key-value metadata attached to the payment
+          example:
+            orderId: ord_xyz789
+
+    Payment:
+      type: object
+      required: [id, reference, userId, amountMinor, currency, provider, status, metadata, createdAt]
+      properties:
+        id:
+          type: string
+        reference:
+          type: string
+          description: Human-readable unique reference
+        userId:
+          type: string
+        amountMinor:
+          type: integer
+          exclusiveMinimum: 0
+        currency:
+          type: string
+        provider:
+          type: string
+          enum: [MOCK_CARD, MOCK_TRANSFER]
+        status:
+          type: string
+          enum: [PENDING, PROCESSING, COMPLETED, FAILED, REFUNDED]
+        metadata:
+          type: object
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+
+    PaymentDetail:
+      allOf:
+        - $ref: "#/components/schemas/Payment"
+        - type: object
+          properties:
+            providerRef:
+              type: string
+              nullable: true
+              description: Provider-side reference ID
+            capturedAt:
+              type: string
+              format: date-time
+              nullable: true
+            refundedAt:
+              type: string
+              format: date-time
+              nullable: true
+            ledgerEntries:
+              type: array
+              items:
+                $ref: "#/components/schemas/LedgerEntry"
+              description: Double-entry ledger entries for this payment
+
+    LedgerEntry:
+      type: object
+      required: [id, type, amountMinor, currency, createdAt]
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [DEBIT, CREDIT]
+        amountMinor:
+          type: integer
+        currency:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    PaymentList:
+      type: object
+      required: [payments, nextCursor]
+      properties:
+        payments:
+          type: array
+          items:
+            $ref: "#/components/schemas/Payment"
+        nextCursor:
+          type: string
+          nullable: true
+          description: Cursor for the next page; null when no more results
+
+    # ── Notifications ───────────────────────────────────────────────
+    CreateNotificationRequest:
+      type: object
+      required: [channel, templateKey, recipient, payload]
+      properties:
+        userId:
+          type: string
+          description: Optional user ID for association
+        channel:
+          type: string
+          enum: [EMAIL, SMS]
+        templateKey:
+          type: string
+          description: Template identifier (e.g. "payment.received")
+        recipient:
+          type: string
+          description: Email address or phone number
+        payload:
+          type: object
+          additionalProperties: true
+          description: Template variables
+          example:
+            amount: "50.00"
+            currency: NGN
+
+    NotificationAccepted:
+      type: object
+      required: [id, status]
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          enum: [QUEUED]
+
+    NotificationSummary:
+      type: object
+      required: [id, channel, templateKey, recipient, status, payload, createdAt]
+      properties:
+        id:
+          type: string
+        channel:
+          type: string
+          enum: [EMAIL, SMS]
+        templateKey:
+          type: string
+        recipient:
+          type: string
+        status:
+          type: string
+          enum: [QUEUED, SENT, DELIVERED, FAILED]
+        payload:
+          type: object
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+
+    NotificationDetail:
+      allOf:
+        - $ref: "#/components/schemas/NotificationSummary"
+        - type: object
+          properties:
+            attempts:
+              type: array
+              items:
+                $ref: "#/components/schemas/NotificationAttempt"
+
+    NotificationAttempt:
+      type: object
+      required: [status, attemptedAt]
+      properties:
+        status:
+          type: string
+          enum: [SENT, DELIVERED, FAILED]
+        attemptedAt:
+          type: string
+          format: date-time
+
+    NotificationList:
+      type: object
+      required: [notifications, nextCursor]
+      properties:
+        notifications:
+          type: array
+          items:
+            $ref: "#/components/schemas/NotificationSummary"
+        nextCursor:
+          type: string
+          nullable: true
+
+    # ── Webhooks ────────────────────────────────────────────────────
+    WebhookAccepted:
+      type: object
+      required: [received, eventId]
+      properties:
+        received:
+          type: boolean
+        eventId:
+          type: string
+
+    # ── Errors ──────────────────────────────────────────────────────
+    ErrorResponse:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          type: string
+          description: Machine-readable error code
+          example: VALIDATION_ERROR
+        message:
+          type: string
+          description: Human-readable error message
+          example: "Invalid request body"
+        requestId:
+          type: string
+          nullable: true
+          description: Request trace ID for debugging
