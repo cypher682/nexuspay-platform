@@ -1,6 +1,6 @@
 {
   "name": "payments-service",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "NexusPay payments service: payment lifecycle state machine, double-entry ledger, idempotency keys, provider webhooks, reconciliation.",
   "main": "dist/main.js",
   "scripts": {

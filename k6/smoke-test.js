@@ -20,5 +20,12 @@ export default function () {
     "health body has status ok": (r) => JSON.parse(r.body).status === "ok",
   });
 
+  // Public OpenAPI spec served by the gateway
+  const specRes = http.get(`${BASE_URL}/docs/openapi.json`);
+  check(specRes, {
+    "openapi spec returns 200": (r) => r.status === 200,
+    "spec body is YAML": (r) => typeof r.body === "string" && r.body.length > 100,
+  });
+
   sleep(1);
 }

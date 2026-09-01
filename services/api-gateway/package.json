@@ -1,6 +1,6 @@
 {
   "name": "api-gateway",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "NexusPay edge gateway: JWT validation, Redis sliding-window rate limiting, request routing, correlation IDs, response aggregation.",
   "main": "dist/main.js",
   "scripts": {

@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -30,12 +31,14 @@ jobs:
       auth: ${{ steps.filter.outputs.auth }}
       payments: ${{ steps.filter.outputs.payments }}
       notifications: ${{ steps.filter.outputs.notifications }}
+      infra: ${{ steps.filter.outputs.infra }}
       services: ${{ steps.services.outputs.json }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
         id: filter
         with:
+          base: ${{ github.event_name == 'workflow_dispatch' && 'HEAD~1' || github.event.pull_request.base.sha || github.event.before }}
           filters: |
             gateway:
               - 'services/api-gateway/**'
@@ -46,6 +49,12 @@ jobs:
               - 'services/payments-service/**'
             notifications:
               - 'services/notifications-service/**'
+            infra:
+              - 'docker-compose.yml'
+              - '.env.example'
+              - '.github/workflows/**'
+              - 'k6/**'
+              - 'scripts/**'
 
       - name: Build JSON matrix of changed services
         id: services
@@ -130,7 +139,7 @@ jobs:
   build:
     needs: [changes, test]
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && needs.changes.outputs.services != '[]'
+    if: github.event_name != 'pull_request' && needs.changes.outputs.services != '[]'
     permissions:
       contents: read
       packages: write
@@ -222,7 +231,7 @@ jobs:
   k6-smoke:
     needs: [lint, changes]
     runs-on: ubuntu-latest
-    if: needs.changes.outputs.services != '[]'
+    if: needs.changes.outputs.services != '[]' || needs.changes.outputs.infra == 'true'
     steps:
       - uses: actions/checkout@v4
 
