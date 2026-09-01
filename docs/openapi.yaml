@@ -892,16 +892,116 @@ paths:
       tags: [Auth]
       summary: Verify email address
       description: |
-        Verifies a user's email address. Currently a stub pending integration
-        with notifications-service.
+        Verifies a user's email address using the one-time token distributed
+        in the `auth.user_registered` email. On success the account is marked
+        verified and the stored token is cleared.
       parameters:
         - name: token
           in: query
+          required: true
           schema:
             type: string
+            minLength: 16
       responses:
-        "501":
-          description: Not implemented
+        "200":
+          description: Verification result
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [verified, alreadyVerified]
+                properties:
+                  verified:
+                    type: boolean
+                  alreadyVerified:
+                    type: boolean
+              examples:
+                verified:
+                  value: { verified: true, alreadyVerified: false }
+                already:
+                  value: { verified: false, alreadyVerified: true }
+        "400":
+          description: Invalid or expired verification token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "410":
+          description: Verification link expired (token ttl exceeded)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/auth/forgot-password:
+    post:
+      operationId: forgotPassword
+      tags: [Auth]
+      summary: Request a password reset email
+      description: |
+        If the email belongs to a registered account a one-time reset link is
+        emailed via the `auth.password_reset` event. Always responds 202 to
+        avoid account enumeration.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+            example:
+              email: alice@example.com
+      responses:
+        "202":
+          description: Reset requested
+        "422":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/auth/reset-password:
+    post:
+      operationId: resetPassword
+      tags: [Auth]
+      summary: Reset password with a one-time token
+      description: |
+        Sets a new password from a one-time reset token (from the password-reset
+        email, TTL 60 minutes) and revokes all refresh-token families for the
+        account.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, newPassword]
+              properties:
+                token:
+                  type: string
+                  minLength: 16
+                newPassword:
+                  type: string
+                  minLength: 10
+            example:
+              token: rp_a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c
+              newPassword: SuperSecure123
+      responses:
+        "204":
+          description: Password reset, all sessions revoked
+        "400":
+          description: Invalid or expired reset token, or weak password
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Validation error (e.g. weak password)
           content:
             application/json:
               schema:
