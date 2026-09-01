@@ -32,20 +32,18 @@ jobs:
   changes:
     runs-on: ubuntu-latest
     outputs:
-      gateway: ${{ steps.filter.outputs.gateway }}
-      auth: ${{ steps.filter.outputs.auth }}
-      payments: ${{ steps.filter.outputs.payments }}
-      notifications: ${{ steps.filter.outputs.notifications }}
-      infra: ${{ steps.filter.outputs.infra }}
       services: ${{ steps.services.outputs.json }}
+      infra: ${{ steps.services.outputs.infra }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - uses: dorny/paths-filter@v3
         id: filter
+        if: ${{ github.event.inputs.force_all != 'true' }}
         with:
           base: ${{ github.event_name == 'workflow_dispatch' && 'HEAD~1' || github.event.pull_request.base.sha || github.event.before }}
+          head: ${{ github.event_name == 'workflow_dispatch' && 'HEAD' || github.event.pull_request.head.sha || github.sha }}
           filters: |
             gateway:
               - 'services/api-gateway/**'
@@ -70,10 +68,12 @@ jobs:
           AUTH: ${{ steps.filter.outputs.auth }}
           PAYMENTS: ${{ steps.filter.outputs.payments }}
           NOTIFICATIONS: ${{ steps.filter.outputs.notifications }}
+          INFRA: ${{ steps.filter.outputs.infra }}
           FORCE_ALL: ${{ github.event.inputs.force_all }}
         run: |
           if [ "$FORCE_ALL" = "true" ]; then
             JSON='[{"service":"api-gateway"},{"service":"auth-service"},{"service":"payments-service"},{"service":"notifications-service"}]'
+            INFRA_JSON=true
           else
             JSON="[]"
             add() {
@@ -87,8 +87,10 @@ jobs:
             [ "$AUTH" = "true" ] && add auth-service
             [ "$PAYMENTS" = "true" ] && add payments-service
             [ "$NOTIFICATIONS" = "true" ] && add notifications-service
+            INFRA_JSON=$INFRA
           fi
           echo "json=$JSON" >> "$GITHUB_OUTPUT"
+          echo "infra=$INFRA_JSON" >> "$GITHUB_OUTPUT"
           echo "Changed services: $JSON"
 
   # ──────────────────────────────────────────────
