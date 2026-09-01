@@ -11,7 +11,11 @@ import {
   isRefreshPayload
 } from "../lib/tokens";
 import { hashPassword, verifyPassword } from "../lib/crypto";
+import { redis } from "../lib/redis";
+import { env } from "../config/env";
+import { publishPasswordReset, publishUserRegistered } from "../lib/events";
 import { HttpError } from "../middleware/error-handler";
+import { logger } from "../lib/logger";
 import { recordAuditEvent } from "./audit.service";
 import { assignRoleToUser, seedBaseRoles } from "./rbac.service";
 import {
@@ -83,7 +87,7 @@ async function issueTokenPair(user: User): Promise<TokenPair> {
     }
   });
 
-  return { accessToken: createAccessToken(user.id), refreshToken };
+  return { accessToken: createAccessToken(user.id, [], user.email), refreshToken };
 }
 
 export async function registerUser(
@@ -115,6 +119,19 @@ export async function registerUser(
     userAgent: origin.userAgent,
     metadata: { email: normalizedEmail }
   });
+
+  const verifyUrl = `${env.PUBLIC_BASE_URL}/v1/auth/verify-email?token=${encodeURIComponent(verificationToken)}`;
+  await publishUserRegistered({
+    email: normalizedEmail,
+    fullName: user.fullName,
+    verifyUrl
+  }).catch((err) =>
+    logger.warn("events.publish_failed", {
+      event: "auth.user_registered",
+      userId: user.id,
+      error: err instanceof Error ? err.message : String(err)
+    })
+  );
 
   const tokens = await issueTokenPair(user);
   return { user: toPublicUser(user), ...tokens };
@@ -299,7 +316,7 @@ export async function refreshTokens(refreshToken: string): Promise<TokenPair> {
     metadata: { familyId: family.familyId }
   });
 
-  return { accessToken: createAccessToken(user.id), refreshToken: nextRefreshToken };
+  return { accessToken: createAccessToken(user.id, [], user.email), refreshToken: nextRefreshToken };
 }
 
 export async function logoutUser(
@@ -334,6 +351,97 @@ export async function revokeAllSessionsForUser(userId: string): Promise<number> 
     data: { isRevoked: true, revokedAt: new Date() }
   });
   return result.count;
+}
+
+export async function verifyEmail(
+  token: string
+): Promise<{ verified: boolean; alreadyVerified: boolean }> {
+  const verificationHash = hashToken(token);
+  const user = await prisma.user.findUnique({
+    where: { verificationToken: verificationHash }
+  });
+  if (!user) {
+    throw new HttpError(400, "Invalid or expired verification token");
+  }
+
+  if (user.isVerified) {
+    return { verified: false, alreadyVerified: true };
+  }
+
+  const ttlMs = env.VERIFICATION_TOKEN_TTL_HOURS * 60 * 60 * 1000;
+  if (Date.now() - user.createdAt.getTime() > ttlMs) {
+    throw new HttpError(410, "Verification link has expired. Register again to receive a new one.");
+  }
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { isVerified: true, verificationToken: null }
+  });
+  await recordAuditEvent({
+    eventType: "auth.email.verified",
+    userId: user.id,
+    metadata: { email: user.email }
+  });
+  return { verified: true, alreadyVerified: false };
+}
+
+export async function forgotPassword(email: string): Promise<void> {
+  const user = await getUserByEmail(email);
+  if (!user) {
+    return;
+  }
+
+  const token = crypto.randomBytes(32).toString("base64url");
+  const key = `nexuspay:auth:reset:${hashToken(token)}`;
+  await redis.set(key, user.id, "EX", env.PASSWORD_RESET_TTL_MINUTES * 60);
+
+  const resetUrl = `${env.PUBLIC_BASE_URL}/v1/auth/reset-password?token=${encodeURIComponent(token)}`;
+  await publishPasswordReset({
+    email: user.email,
+    fullName: user.fullName,
+    resetUrl
+  }).catch((err) =>
+    logger.warn("events.publish_failed", {
+      event: "auth.password_reset",
+      userId: user.id,
+      error: err instanceof Error ? err.message : String(err)
+    })
+  );
+
+  await recordAuditEvent({
+    eventType: "auth.password.reset_requested",
+    userId: user.id,
+    metadata: { email: user.email }
+  });
+}
+
+export async function resetPassword(token: string, newPassword: string): Promise<void> {
+  const key = `nexuspay:auth:reset:${hashToken(token)}`;
+  const userId = await redis.get(key);
+  if (!userId) {
+    throw new HttpError(400, "Invalid or expired reset token");
+  }
+
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) {
+    throw new HttpError(400, "Invalid or expired reset token");
+  }
+
+  await prisma.$transaction([
+    prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash: hashPassword(newPassword) }
+    }),
+    prisma.refreshTokenFamily.updateMany({
+      where: { userId: user.id, isRevoked: false },
+      data: { isRevoked: true, revokedAt: new Date() }
+    })
+  ]);
+  await redis.del(key);
+  await recordAuditEvent({
+    eventType: "auth.password.reset",
+    userId: user.id
+  });
 }
 
 export async function bootstrapSeedData(): Promise<void> {

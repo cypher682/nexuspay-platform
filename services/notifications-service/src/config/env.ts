@@ -19,6 +19,7 @@ const envSchema = z.object({
     ),
   RABBITMQ_URL: z.string().min(1).default("amqp://nexuspay:nexuspay@localhost:5672"),
   QUEUE_NAME: z.string().min(1).default("nexuspay.notifications.send"),
+  EVENTS_EXCHANGE: z.string().min(1).default("nexuspay.events"),
 
   OTEL_TRACES_ENABLED: boolFromEnv,
   OTEL_TRACES_ENDPOINT: z.string().url().default("http://localhost:4318/v1/traces"),

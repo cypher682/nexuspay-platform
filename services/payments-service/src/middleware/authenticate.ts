@@ -17,7 +17,7 @@ function extractBearerToken(req: Request): string {
 export function authenticate(req: Request, _res: Response, next: NextFunction): void {
   try {
     const payload = verifyAccessToken(extractBearerToken(req));
-    req.auth = { userId: payload.sub, scopes: payload.scopes };
+    req.auth = { userId: payload.sub, scopes: payload.scopes, email: payload.email };
     next();
   } catch (err) {
     if (err instanceof TokenVerificationError) {
@@ -36,7 +36,7 @@ export function optionalAuthenticate(req: Request, _res: Response, next: NextFun
   }
   try {
     const payload = verifyAccessToken(header.slice("Bearer ".length).trim());
-    req.auth = { userId: payload.sub, scopes: payload.scopes };
+    req.auth = { userId: payload.sub, scopes: payload.scopes, email: payload.email };
     next();
   } catch (err) {
     if (err instanceof TokenVerificationError) {

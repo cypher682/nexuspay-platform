@@ -52,6 +52,7 @@ services:
       PORT: 4001
       DATABASE_URL: postgresql://nexuspay:nexuspay@postgres:5432/nexuspay_auth?schema=public
       REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://nexuspay:nexuspay@rabbitmq:5672
       OTEL_TRACES_ENDPOINT: http://jaeger:4318/v1/traces
     ports:
       - "4001:4001"
@@ -66,6 +67,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
 
   payments-service:
     build: ./services/payments-service
@@ -74,6 +77,7 @@ services:
       PORT: 4002
       DATABASE_URL: postgresql://nexuspay:nexuspay@postgres:5432/nexuspay_payments?schema=public
       REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://nexuspay:nexuspay@rabbitmq:5672
       OTEL_TRACES_ENDPOINT: http://jaeger:4318/v1/traces
     ports:
       - "4002:4002"
@@ -87,6 +91,8 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
 
   notifications-service:

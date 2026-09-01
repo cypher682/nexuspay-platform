@@ -19,6 +19,7 @@ export class TokenVerificationError extends Error {
 export type AccessTokenPayload = {
   sub: string;
   scopes: string[];
+  email?: string;
 };
 
 export function verifyAccessToken(token: string): AccessTokenPayload {
@@ -44,5 +45,9 @@ export function verifyAccessToken(token: string): AccessTokenPayload {
     throw new TokenVerificationError("TOKEN_INVALID", "Malformed token payload");
   }
 
-  return { sub: payload.sub, scopes: payload.scopes };
+  return {
+    sub: payload.sub,
+    scopes: payload.scopes,
+    email: typeof payload.email === "string" ? payload.email : undefined
+  };
 }

@@ -75,7 +75,9 @@ const PUBLIC_AUTH_PATHS = new Set([
   "/login",
   "/refresh",
   "/mfa/verify",
-  "/verify-email"
+  "/verify-email",
+  "/forgot-password",
+  "/reset-password"
 ]);
 
 router.use("/auth", (req, res, next) => {

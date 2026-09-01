@@ -5,6 +5,7 @@ import { env } from "../config/env";
 export interface AccessTokenClaims {
   sub: string;
   type: "access";
+  email: string;
   scopes: string[];
   iss: string;
 }
@@ -32,8 +33,8 @@ function seconds(days: number): number {
   return days * 24 * 60 * 60;
 }
 
-export function createAccessToken(subject: string, scopes: string[] = []): string {
-  const payload = { sub: subject, type: "access", scopes, iss: issuer };
+export function createAccessToken(subject: string, scopes: string[] = [], email: string): string {
+  const payload = { sub: subject, type: "access", email, scopes, iss: issuer };
   return jwt.sign(payload, env.JWT_SECRET, {
     algorithm: env.JWT_ALGORITHM,
     expiresIn: `${env.ACCESS_TOKEN_TTL_MINUTES}m`

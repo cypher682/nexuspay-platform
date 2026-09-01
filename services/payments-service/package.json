@@ -31,6 +31,7 @@
     "@opentelemetry/resources": "^2.11.0",
     "@opentelemetry/sdk-node": "^0.222.0",
     "@prisma/client": "^6.17.1",
+    "amqplib": "^0.10.9",
     "bullmq": "^5.61.2",
     "compression": "^1.8.1",
     "cors": "^2.8.5",
@@ -45,6 +46,7 @@
     "zod": "^4.1.12"
   },
   "devDependencies": {
+    "@types/amqplib": "^0.10.7",
     "@types/compression": "^1.8.1",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",

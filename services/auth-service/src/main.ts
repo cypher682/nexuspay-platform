@@ -3,6 +3,7 @@ import { env } from "./config/env";
 import { logger } from "./lib/logger";
 import { prisma } from "./lib/prisma";
 import { closeRedis, redis } from "./lib/redis";
+import { closeEventPublisher } from "./lib/events";
 import { bootstrapSeedData } from "./services/auth.service";
 
 const SERVICE_NAME = "auth-service";
@@ -32,6 +33,7 @@ async function bootstrap(): Promise<void> {
     logger.info(`${signal} received, shutting down`);
     server.close(async () => {
       await shutdownTelemetry();
+      await closeEventPublisher().catch(() => undefined);
       await closeRedis().catch(() => undefined);
       await prisma.$disconnect().catch(() => undefined);
       process.exit(0);

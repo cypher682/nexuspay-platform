@@ -17,10 +17,28 @@ const DEFAULT_TEMPLATES = [
     body: "Hi {{fullName}}, your NexusPay account is ready."
   },
   {
+    key: "verify_email",
+    channel: "EMAIL" as const,
+    subject: "Verify your NexusPay email",
+    body: "Hi {{fullName}}, verify your email to activate your NexusPay account: {{verifyUrl}}"
+  },
+  {
+    key: "password_reset",
+    channel: "EMAIL" as const,
+    subject: "Reset your NexusPay password",
+    body: "Hi {{fullName}}, you requested a password reset. Use this link within the hour: {{resetUrl}}"
+  },
+  {
     key: "payment_receipt_email",
     channel: "EMAIL" as const,
     subject: "Payment receipt: {{reference}}",
     body: "We received {{amountMinor}} {{currency}} for payment {{reference}}. Thank you."
+  },
+  {
+    key: "payment_failed_email",
+    channel: "EMAIL" as const,
+    subject: "Payment declined: {{reference}}",
+    body: "We could not process {{amountMinor}} {{currency}} for payment {{reference}}. Your funds were not charged."
   },
   {
     key: "otp_sms",
@@ -78,6 +96,90 @@ export async function enqueueNotification(input: EnqueueNotificationInput): Prom
   });
 
   return notification;
+}
+
+function readString(payload: Record<string, unknown>, key: string): string {
+  const value = payload[key];
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new HttpError(422, `Domain event missing ${key}`);
+  }
+  return value;
+}
+
+function readOptionalUserId(payload: Record<string, unknown>): string | undefined {
+  const value = payload.userId;
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+export async function handleDomainEvent(
+  routingKey: string,
+  payload: Record<string, unknown>
+): Promise<"ack" | "retry" | "reject"> {
+  switch (routingKey) {
+    case "payment.succeeded":
+      await enqueueNotification({
+        userId: readOptionalUserId(payload),
+        channel: "EMAIL",
+        templateKey: "payment_receipt_email",
+        recipient: readString(payload, "email"),
+        payload: {
+          reference: readString(payload, "reference"),
+          amountMinor: payload.amountMinor,
+          currency: readString(payload, "currency")
+        }
+      });
+      return "ack";
+
+    case "payment.failed":
+      await enqueueNotification({
+        userId: readOptionalUserId(payload),
+        channel: "EMAIL",
+        templateKey: "payment_failed_email",
+        recipient: readString(payload, "email"),
+        payload: {
+          reference: readString(payload, "reference"),
+          amountMinor: payload.amountMinor,
+          currency: readString(payload, "currency")
+        }
+      });
+      return "ack";
+
+    case "auth.user_registered":
+      await enqueueNotification({
+        userId: readOptionalUserId(payload),
+        channel: "EMAIL",
+        templateKey: "verify_email",
+        recipient: readString(payload, "email"),
+        payload: {
+          fullName:
+            typeof payload.fullName === "string" && payload.fullName.length > 0
+              ? payload.fullName
+              : "there",
+          verifyUrl: readString(payload, "verifyUrl")
+        }
+      });
+      return "ack";
+
+    case "auth.password_reset":
+      await enqueueNotification({
+        userId: readOptionalUserId(payload),
+        channel: "EMAIL",
+        templateKey: "password_reset",
+        recipient: readString(payload, "email"),
+        payload: {
+          fullName:
+            typeof payload.fullName === "string" && payload.fullName.length > 0
+              ? payload.fullName
+              : "there",
+          resetUrl: readString(payload, "resetUrl")
+        }
+      });
+      return "ack";
+
+    default:
+      logger.warn("domain.unhandled_event", { routingKey });
+      return "ack";
+  }
 }
 
 export async function processDelivery(notificationId: string): Promise<void> {

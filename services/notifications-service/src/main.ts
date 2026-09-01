@@ -4,6 +4,7 @@ import { logger } from "./lib/logger";
 import { prisma } from "./lib/prisma";
 import { seedDefaultTemplates } from "./services/notifications.service";
 import { startNotificationWorker, stopNotificationWorker } from "./workers/notification.worker";
+import { startDomainWorker, stopDomainWorker } from "./workers/domain.worker";
 
 const SERVICE_NAME = "notifications-service";
 const SERVICE_VERSION = "1.1.0";
@@ -20,6 +21,7 @@ async function bootstrap(): Promise<void> {
 
   if (env.NODE_ENV !== "test") {
     void startNotificationWorker();
+    void startDomainWorker();
   }
 
   try {
@@ -34,6 +36,7 @@ async function bootstrap(): Promise<void> {
   async function shutdown(signal: string): Promise<void> {
     logger.info(`${signal} received, shutting down`);
     await stopNotificationWorker();
+    await stopDomainWorker();
     server.close(async () => {
       await shutdownTelemetry();
       await prisma.$disconnect().catch(() => undefined);

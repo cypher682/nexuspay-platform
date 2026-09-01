@@ -5,9 +5,11 @@ import { logger } from "../lib/logger";
 import { HttpError } from "../middleware/error-handler";
 import { assertTransition } from "./payment-state-machine";
 import { paymentProcessingQueue } from "../queues";
+import { publishPaymentFailed, publishPaymentSucceeded } from "../lib/events";
 
 export interface CreatePaymentInput {
   userId: string;
+  recipientEmail?: string;
   amountMinor: number;
   currency?: string;
   provider: "MOCK_CARD" | "MOCK_TRANSFER";
@@ -28,6 +30,7 @@ export async function createPayment(input: CreatePaymentInput): Promise<Payment>
       data: {
         reference: generateReference(),
         userId: input.userId,
+        recipientEmail: input.recipientEmail ?? null,
         amountMinor: input.amountMinor,
         currency: (input.currency ?? "NGN").toUpperCase(),
         provider: input.provider,
@@ -198,6 +201,15 @@ export async function markSucceeded(paymentId: string, providerRef: string): Pro
     })
   ]);
 
+  await publishPaymentSucceeded(payment)
+    .catch((err) =>
+      logger.warn("events.publish_failed", {
+        event: "payment.succeeded",
+        paymentId: payment.id,
+        error: err instanceof Error ? err.message : String(err)
+      })
+    );
+
   logger.info("payment.succeeded", { paymentId, providerRef, feeMinor });
   return prisma.payment.findUniqueOrThrow({ where: { id: paymentId } });
 }
@@ -206,11 +218,22 @@ export async function markFailed(paymentId: string, reason: string): Promise<Pay
   const payment = await prisma.payment.findUniqueOrThrow({ where: { id: paymentId } });
   assertTransition(payment.status, "FAILED");
 
-  logger.info("payment.failed", { paymentId, reason });
-  return prisma.payment.update({
+  const failed = await prisma.payment.update({
     where: { id: paymentId },
     data: { status: "FAILED", failureReason: reason }
   });
+
+  await publishPaymentFailed(failed)
+    .catch((err) =>
+      logger.warn("events.publish_failed", {
+        event: "payment.failed",
+        paymentId: failed.id,
+        error: err instanceof Error ? err.message : String(err)
+      })
+    );
+
+  logger.info("payment.failed", { paymentId, reason });
+  return failed;
 }
 
 export async function refundPayment(paymentId: string, userId: string, hasWildcardScope: boolean): Promise<Payment> {

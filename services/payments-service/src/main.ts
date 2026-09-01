@@ -5,6 +5,7 @@ import { logger } from "./lib/logger";
 import { prisma } from "./lib/prisma";
 import { closeRedis, bullMqConnectionOptions } from "./lib/redis";
 import { refreshQueueMetrics } from "./lib/metrics";
+import { closeEventPublisher } from "./lib/events";
 import { QUEUES } from "./queues/names";
 import { startPaymentWorker } from "./workers/payment.worker";
 
@@ -39,6 +40,7 @@ async function bootstrap(): Promise<void> {
     await queue?.close().catch(() => undefined);
     server.close(async () => {
       await shutdownTelemetry();
+      await closeEventPublisher().catch(() => undefined);
       await closeRedis().catch(() => undefined);
       await prisma.$disconnect().catch(() => undefined);
       process.exit(0);

@@ -27,7 +27,11 @@ router.post(
   requireIdempotency("POST:/v1/payments"),
   asyncHandler(async (req, res) => {
     const body = createSchema.parse(req.body);
-    const payment = await createPayment({ ...body, userId: req.auth!.userId });
+    const payment = await createPayment({
+      ...body,
+      userId: req.auth!.userId,
+      recipientEmail: req.auth?.email
+    });
 
     if (typeof res.locals.idempotencyComplete === "function") {
       await res.locals.idempotencyComplete(201, payment);

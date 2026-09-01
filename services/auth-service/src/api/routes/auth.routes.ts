@@ -1,25 +1,29 @@
 import { Router, type Request } from "express";
 import { z } from "zod";
 import {
+  forgotPassword,
   loginUser,
   logoutUser,
   refreshTokens,
   registerUser,
+  resetPassword,
+  verifyEmail,
   verifyMfaChallenge
 } from "../../services/auth.service";
-import { HttpError } from "../../middleware/error-handler";
 import { asyncHandler } from "./utils";
 
 const router = Router();
 
+const passwordSchema = z
+  .string()
+  .min(10)
+  .regex(/[A-Z]/, "Must contain an uppercase letter")
+  .regex(/[a-z]/, "Must contain a lowercase letter")
+  .regex(/[0-9]/, "Must contain a digit");
+
 const registerSchema = z.object({
   email: z.string().email(),
-  password: z
-    .string()
-    .min(10)
-    .regex(/[A-Z]/, "Must contain an uppercase letter")
-    .regex(/[a-z]/, "Must contain a lowercase letter")
-    .regex(/[0-9]/, "Must contain a digit"),
+  password: passwordSchema,
   fullName: z.string().min(1).max(120).optional()
 });
 
@@ -95,8 +99,37 @@ router.post(
 
 router.get(
   "/verify-email",
-  asyncHandler(async (_req, _res) => {
-    throw new HttpError(501, "Email verification flow pending integration with notifications-service");
+  asyncHandler(async (req, res) => {
+    const { token } = z.object({ token: z.string().min(16) }).parse(req.query);
+    const result = await verifyEmail(token);
+    res.json(result);
+  })
+);
+
+const forgotPasswordSchema = z.object({
+  email: z.string().email()
+});
+
+router.post(
+  "/forgot-password",
+  asyncHandler(async (req, res) => {
+    const body = forgotPasswordSchema.parse(req.body);
+    await forgotPassword(body.email);
+    res.status(202).send();
+  })
+);
+
+const resetPasswordSchema = z.object({
+  token: z.string().min(16),
+  newPassword: passwordSchema
+});
+
+router.post(
+  "/reset-password",
+  asyncHandler(async (req, res) => {
+    const body = resetPasswordSchema.parse(req.body);
+    await resetPassword(body.token, body.newPassword);
+    res.status(204).send();
   })
 );
 

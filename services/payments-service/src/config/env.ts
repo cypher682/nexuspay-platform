@@ -16,6 +16,8 @@ const envSchema = z.object({
     .min(1)
     .default("postgresql://nexuspay:nexuspay@localhost:5433/nexuspay_payments?schema=public"),
   REDIS_URL: z.string().min(1).default("redis://localhost:6379"),
+  RABBITMQ_URL: z.string().min(1).default("amqp://nexuspay:nexuspay@localhost:5672"),
+  EVENTS_EXCHANGE: z.string().min(1).default("nexuspay.events"),
 
   OTEL_TRACES_ENABLED: boolFromEnv,
   OTEL_TRACES_ENDPOINT: z.string().url().default("http://localhost:4318/v1/traces"),

@@ -2,6 +2,10 @@ import amqp, { type Channel, type ChannelModel } from "amqplib";
 import { env } from "../config/env";
 import { logger } from "./logger";
 
+export const DLX_EXCHANGE = "nexuspay.dlx";
+export const DLQ_NAME = "nexuspay.notifications.dead";
+export const DOMAIN_QUEUE_NAME = "nexuspay.events.domain";
+
 let connection: ChannelModel | null = null;
 let channel: Channel | null = null;
 
@@ -26,7 +30,22 @@ export async function getChannel(retries = 5, delayMs = 2000): Promise<Channel> 
       });
 
       channel = await connection.createConfirmChannel();
-      await channel.assertQueue(env.QUEUE_NAME, { durable: true });
+      await channel.assertExchange(env.EVENTS_EXCHANGE, "topic", { durable: true });
+      await channel.assertExchange(DLX_EXCHANGE, "topic", { durable: true });
+
+      await channel.assertQueue(env.QUEUE_NAME, {
+        durable: true,
+        arguments: {
+          "x-dead-letter-exchange": DLX_EXCHANGE,
+          "x-dead-letter-routing-key": "notification.dead"
+        }
+      });
+      await channel.assertQueue(DLQ_NAME, { durable: true });
+      await channel.bindQueue(DLQ_NAME, DLX_EXCHANGE, "#");
+
+      await channel.assertQueue(DOMAIN_QUEUE_NAME, { durable: true });
+      await channel.bindQueue(DOMAIN_QUEUE_NAME, env.EVENTS_EXCHANGE, "payment.#");
+      await channel.bindQueue(DOMAIN_QUEUE_NAME, env.EVENTS_EXCHANGE, "auth.#");
       return channel;
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
@@ -68,6 +87,75 @@ export async function startConsumer(
     }
   });
   logger.info(`RabbitMQ consumer started on queue ${env.QUEUE_NAME}`);
+}
+
+export async function startDomainConsumer(
+  handler: (event: {
+    routingKey: string;
+    payload: Record<string, unknown>;
+  }) => Promise<"ack" | "retry" | "reject">
+): Promise<void> {
+  const ch = await getChannel();
+  await ch.prefetch(10);
+  await ch.consume(DOMAIN_QUEUE_NAME, async (msg) => {
+    if (!msg) {
+      return;
+    }
+    let payload: Record<string, unknown>;
+    try {
+      const raw = JSON.parse(msg.content.toString()) as { data?: Record<string, unknown> };
+      payload = raw.data ?? {};
+    } catch (err) {
+      logger.error("domain.poison_message", {
+        routingKey: msg.fields.routingKey,
+        error: err instanceof Error ? err.message : String(err)
+      });
+      ch.nack(msg, false, false);
+      return;
+    }
+    try {
+      const action = await handler({ routingKey: msg.fields.routingKey, payload });
+      if (action === "reject") {
+        ch.nack(msg, false, false);
+        return;
+      }
+      if (action === "retry") {
+        ch.nack(msg, false, true);
+        return;
+      }
+      ch.ack(msg);
+    } catch (err) {
+      logger.error("domain.processing_failed", {
+        routingKey: msg.fields.routingKey,
+        error: err instanceof Error ? err.message : String(err)
+      });
+      ch.nack(msg, false, false);
+    }
+  });
+  logger.info(`Domain consumer started on queue ${DOMAIN_QUEUE_NAME}`);
+}
+
+export async function startDeadLetterConsumer(
+  handler: (message: { routingKey: string; content: string }) => Promise<void>
+): Promise<void> {
+  const ch = await getChannel();
+  await ch.prefetch(10);
+  await ch.consume(DLQ_NAME, async (msg) => {
+    if (!msg) {
+      return;
+    }
+    try {
+      await handler({ routingKey: msg.fields.routingKey, content: msg.content.toString() });
+      ch.ack(msg);
+    } catch (err) {
+      logger.error("deadletter.processing_failed", {
+        routingKey: msg.fields.routingKey,
+        error: err instanceof Error ? err.message : String(err)
+      });
+      ch.ack(msg);
+    }
+  });
+  logger.info(`Dead-letter consumer started on queue ${DLQ_NAME}`);
 }
 
 export async function closeRabbit(): Promise<void> {

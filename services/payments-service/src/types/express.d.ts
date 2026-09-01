@@ -5,6 +5,7 @@ declare global {
       auth?: {
         userId: string;
         scopes: string[];
+        email?: string;
       };
     }
   }
