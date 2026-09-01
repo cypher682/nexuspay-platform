@@ -10,6 +10,7 @@ import v1Routes from "./api/routes/v1";
 import healthRoutes from "./api/routes/health.routes";
 import { requireInternalApiKey } from "./middleware/internal-auth";
 import { errorHandler, notFoundHandler } from "./middleware/error-handler";
+import { httpMetricsMiddleware, metricsHandler } from "./lib/metrics";
 
 export function createApp(): express.Express {
   const app = express();
@@ -30,6 +31,11 @@ export function createApp(): express.Express {
     res.setHeader("X-Request-Id", req.requestId);
     next();
   });
+
+  if (env.METRICS_ENABLED) {
+    app.get("/metrics", metricsHandler);
+    app.use(httpMetricsMiddleware());
+  }
 
   app.use("/health", healthRoutes);
   app.use("/v1", requireInternalApiKey, v1Routes);

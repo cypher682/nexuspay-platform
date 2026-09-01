@@ -1,6 +1,11 @@
 import "dotenv/config";
 import { z } from "zod";
 
+const boolFromEnv = z.preprocess(
+  (v) => (v === undefined || v === "" ? true : !["false", "0", "no", "off"].includes(String(v).toLowerCase())),
+  z.boolean()
+);
+
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(4003),
@@ -14,6 +19,10 @@ const envSchema = z.object({
     ),
   RABBITMQ_URL: z.string().min(1).default("amqp://nexuspay:nexuspay@localhost:5672"),
   QUEUE_NAME: z.string().min(1).default("nexuspay.notifications.send"),
+
+  OTEL_TRACES_ENABLED: boolFromEnv,
+  OTEL_TRACES_ENDPOINT: z.string().url().default("http://localhost:4318/v1/traces"),
+  METRICS_ENABLED: boolFromEnv,
 
   INTERNAL_API_KEY: z.string().min(16),
 

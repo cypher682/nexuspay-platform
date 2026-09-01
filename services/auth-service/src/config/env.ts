@@ -1,6 +1,11 @@
 import "dotenv/config";
 import { z } from "zod";
 
+const boolFromEnv = z.preprocess(
+  (v) => (v === undefined || v === "" ? true : !["false", "0", "no", "off"].includes(String(v).toLowerCase())),
+  z.boolean()
+);
+
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(4001),
@@ -11,6 +16,10 @@ const envSchema = z.object({
     .min(1)
     .default("postgresql://nexuspay:nexuspay@localhost:5433/nexuspay_auth?schema=public"),
   REDIS_URL: z.string().min(1).default("redis://localhost:6379"),
+
+  OTEL_TRACES_ENABLED: boolFromEnv,
+  OTEL_TRACES_ENDPOINT: z.string().url().default("http://localhost:4318/v1/traces"),
+  METRICS_ENABLED: boolFromEnv,
 
   JWT_SECRET: z.string().min(32),
   JWT_ALGORITHM: z.enum(["HS256", "HS512"]).default("HS256"),

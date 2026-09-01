@@ -8,6 +8,7 @@ import { env } from "./config/env";
 import { stream } from "./lib/logger";
 import v1Routes from "./api/routes/v1";
 import healthRoutes from "./api/routes/health.routes";
+import { httpMetricsMiddleware, metricsHandler } from "./lib/metrics";
 import { correlationId } from "./middleware/correlation-id";
 import { errorHandler, notFoundHandler } from "./middleware/error-handler";
 
@@ -23,6 +24,11 @@ export function createApp(): express.Express {
   app.use(morgan("combined", { stream }));
 
   app.use(correlationId);
+
+  if (env.METRICS_ENABLED) {
+    app.get("/metrics", metricsHandler);
+    app.use(httpMetricsMiddleware());
+  }
 
   app.use("/health", healthRoutes);
   app.use("/docs", express.static(path.join(__dirname, "../public")));
