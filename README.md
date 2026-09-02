@@ -142,6 +142,7 @@ You're up. Useful URLs:
 | Mailpit (captured emails) | http://localhost:8025 | - |
 | Grafana | http://localhost:3000 | `admin` / `admin` |
 | Jaeger (traces) | http://localhost:16686 | - |
+| Alertmanager (alerts) | http://localhost:9093 | - |
 
 > **Ports:** PostgreSQL is published to the host on `localhost:5433` (not `5432`) to avoid
 > colliding with a locally-installed Postgres; services talk to it internally on `postgres:5432`.
@@ -176,7 +177,9 @@ RED metrics show up in Grafana.
   script. See [`infra/kubernetes/`](infra/kubernetes/).
 - **Observability** - OpenTelemetry distributed tracing (`@opentelemetry/sdk-node`) across all
   services routed to **Jaeger**; Prometheus **RED** metrics (`/metrics`); provisioned **Grafana**
-  dashboard; **Loki** for logs.
+  dashboard; **Loki** for logs. SLO/SLI recording rules (99.5% availability, p99 <2s) with a
+  **burn-rate alert** pipeline: Prometheus rules fire -> **Alertmanager** -> alert emails land
+  in **Mailpit** (or your SMTP) for full local verification of the on-call signal path.
 - **Load testing** - k6 suites for smoke / auth login / payment flows with tunable thresholds and
   a documented seed for a verified test user. See [`docs/k6-load-testing.md`](docs/k6-load-testing.md).
 - **API contract** - OpenAPI 3.1 spec validated against actual source routes in CI
@@ -222,6 +225,7 @@ nexuspay-platform/
 | Doc | What |
 |-----|------|
 | [`docs/architecture.md`](docs/architecture.md) | Design decisions, flow breakdown |
+| [`docs/observability.md`](docs/observability.md) | Metrics, SLOs, and the alerting pipeline |
 | [`docs/minikube-deployment-guide.md`](docs/minikube-deployment-guide.md) | Full minikube/GitOps deployment walkthrough |
 | [`docs/k6-load-testing.md`](docs/k6-load-testing.md) | Load tests, thresholds, findings |
 | [`docs/lab-roadmap.md`](docs/lab-roadmap.md) | 6-phase roadmap (all local, $0) |

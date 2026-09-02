@@ -2,6 +2,20 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
 
+# Phase 2: SLI/SLO recording rules + alerting rules
+#   recording_rules.yml -> availability/latency SLIs, error-budget burn rate
+#   alerting_rules.yml  -> error-rate >1%, p99 >2s, queue depth >100, SLO burn
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+# Alerting routes to the local Alertmanager, which emails ops@nexuspay.local
+# via Mailpit (visible at http://localhost:8025).
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
 scrape_configs:
   - job_name: nexuspay-services
     metrics_path: /metrics

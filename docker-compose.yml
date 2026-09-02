@@ -153,15 +153,27 @@ services:
         condition: service_healthy
 
   prometheus:
-      image: prom/prometheus:v3.14.0
-      command:
-        - "--config.file=/etc/prometheus/prometheus.yml"
-        - "--storage.tsdb.path=/prometheus"
-      volumes:
-        - ./infra/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-        - promdata:/prometheus
-      ports:
-        - "9090:9090"
+    image: prom/prometheus:v3.14.0
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+    volumes:
+      - ./infra/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infra/monitoring/prometheus/rules:/etc/prometheus/rules:ro
+      - promdata:/prometheus
+    ports:
+      - "9090:9090"
+
+  alertmanager:
+    image: prom/alertmanager:v0.28.0
+    container_name: nexuspay-alertmanager
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+    volumes:
+      - ./infra/monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports:
+      - "9093:9093"
+    restart: unless-stopped
 
   grafana:
     image: grafana/grafana:12.3.11

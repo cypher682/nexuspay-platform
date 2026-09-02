@@ -1,0 +1,54 @@
+# NexusPay SLI/SLO recording rules
+#
+# SLIs (measured):
+#   - Availability:  1 - (5xx responses / total responses)   -> 99.5% SLO target
+#   - Latency:       p99 of http_request_duration_seconds    -> 2.0s SLO target
+#
+# Alerts derive from these via burn-rate (see alerting_rules.yml).
+# Burn rate = observed error ratio / allowed error ratio (0.005 for 99.5%).
+#   1x   = consuming the 30-day budget exactly on schedule
+#   14.4x = exhausting the 30-day budget in ~2 days
+groups:
+  - name: nexuspay-sli-recording-rules
+    interval: 30s
+    rules:
+      # Per-service error ratio (5xx / total) over a 5-minute window.
+      - record: nexuspay:http_error_ratio:rate5m
+        expr: |
+          sum by (service) (rate(http_requests_total{status_class=~"5[0-9][0-9]"}[5m]))
+            / clamp_min(sum by (service) (rate(http_requests_total[5m])), 1e-9)
+
+      # Per-service error ratio over a 1-hour window.
+      - record: nexuspay:http_error_ratio:rate1h
+        expr: |
+          sum by (service) (rate(http_requests_total{status_class=~"5[0-9][0-9]"}[1h]))
+            / clamp_min(sum by (service) (rate(http_requests_total[1h])), 1e-9)
+
+      # Per-service p99 latency over a 5-minute window.
+      - record: nexuspay:http_request_duration_seconds:p99:rate5m
+        expr: |
+          histogram_quantile(0.99,
+            sum by (le, service) (rate(http_request_duration_seconds_bucket[5m])))
+
+      # Per-service p99 latency over a 1-hour window.
+      - record: nexuspay:http_request_duration_seconds:p99:rate1h
+        expr: |
+          histogram_quantile(0.99,
+            sum by (le, service) (rate(http_request_duration_seconds_bucket[1h])))
+
+      # SLO burn rate: observed 5m error ratio / allowed 0.5% (99.5% SLO).
+      # 1.0 means the 30-day error budget is being consumed exactly as planned.
+      - record: nexuspay:slo:burn_rate:5m
+        labels:
+          slo: "99.5%"
+          budget: "30d"
+        expr: |
+          clamp_min(nexuspay:http_error_ratio:rate5m / 0.005, 0)
+
+      # SLO burn rate over the 1-hour window.
+      - record: nexuspay:slo:burn_rate:1h
+        labels:
+          slo: "99.5%"
+          budget: "30d"
+        expr: |
+          clamp_min(nexuspay:http_error_ratio:rate1h / 0.005, 0)

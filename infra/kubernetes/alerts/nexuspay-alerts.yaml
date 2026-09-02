@@ -1,0 +1,95 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: nexuspay-alerts
+  namespace: nexuspay
+  labels:
+    app.kubernetes.io/part-of: nexuspay
+    prometheus: kube-prometheus
+spec:
+  groups:
+    - name: nexuspay-sli-recording-rules
+      interval: 30s
+      rules:
+        - record: nexuspay:http_error_ratio:rate5m
+          expr: |
+            sum by (service) (rate(http_requests_total{status_class=~"5[0-9][0-9]"}[5m]))
+              / clamp_min(sum by (service) (rate(http_requests_total[5m])), 1e-9)
+        - record: nexuspay:http_error_ratio:rate1h
+          expr: |
+            sum by (service) (rate(http_requests_total{status_class=~"5[0-9][0-9]"}[1h]))
+              / clamp_min(sum by (service) (rate(http_requests_total[1h])), 1e-9)
+        - record: nexuspay:http_request_duration_seconds:p99:rate5m
+          expr: |
+            histogram_quantile(0.99,
+              sum by (le, service) (rate(http_request_duration_seconds_bucket[5m])))
+        - record: nexuspay:slo:burn_rate:5m
+          labels:
+            slo: "99.5%"
+            budget: "30d"
+          expr: |
+            clamp_min(nexuspay:http_error_ratio:rate5m / 0.005, 0)
+        - record: nexuspay:slo:burn_rate:1h
+          labels:
+            slo: "99.5%"
+            budget: "30d"
+          expr: |
+            clamp_min(nexuspay:http_error_ratio:rate1h / 0.005, 0)
+
+    - name: nexuspay-alerting-rules
+      interval: 30s
+      rules:
+        - alert: NexusPayHighErrorRate
+          expr: nexuspay:http_error_ratio:rate5m > 0.01
+          for: 2m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "{{ $labels.service }} error rate above 1%"
+            description: "{{ $labels.service }} returned 5xx for {{ $value | humanizePercentage }} of requests over the last 5 minutes (SLO target 99.5%)."
+        - alert: NexusPayHighP99Latency
+          expr: nexuspay:http_request_duration_seconds:p99:rate5m > 2.0
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "{{ $labels.service }} p99 latency above 2s"
+            description: "p99 latency for {{ $labels.service }} is {{ $value | humanizeDuration }} - breaches the 2s latency SLO."
+        - alert: NexusPayPaymentsQueueBacklog
+          expr: payments_queue_depth{state=~"waiting|active|delayed"} > 100
+          for: 2m
+          labels:
+            severity: page
+            team: platform
+          annotations:
+            summary: "Payments queue backlog above 100 jobs"
+            description: "Payments worker backlog (waiting+active+delayed) is {{ $value }}. Consumers may be stalled - check the BullMQ worker and Redis."
+        - alert: NexusPaySloCriticalBurn
+          expr: nexuspay:slo:burn_rate:1h > 14.4
+          for: 5m
+          labels:
+            severity: page
+            team: platform
+          annotations:
+            summary: "{{ $labels.service }} consuming 30-day error budget at >14.4x"
+            description: "At the current 1h error rate, {{ $labels.service }} will exhaust its 99.5% SLO budget in under 2 days (burn rate {{ printf \"%.1f\" $value }}x). Treat as an availability incident."
+        - alert: NexusPaySloWarningBurn
+          expr: nexuspay:slo:burn_rate:5m > 6
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "{{ $labels.service }} consuming 30-day error budget at >6x"
+            description: "{{ $labels.service }} error budget burn rate is {{ printf \"%.1f\" $value }}x - budget will empty in under 5 days if sustained."
+        - alert: NexusPayTargetDown
+          expr: up{job="nexuspay-services"} == 0
+          for: 1m
+          labels:
+            severity: page
+            team: platform
+          annotations:
+            summary: "{{ $labels.service }} is down"
+            description: "Prometheus cannot scrape {{ $labels.instance }} - unreachable for over a minute."

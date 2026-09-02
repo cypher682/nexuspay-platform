@@ -60,6 +60,7 @@ jobs:
               - '.github/workflows/**'
               - 'k6/**'
               - 'scripts/**'
+              - 'infra/monitoring/**'
 
       - name: Build JSON matrix of changed services
         id: services
@@ -121,6 +122,15 @@ jobs:
             cd ../..
             echo "::endgroup::"
           done
+
+      - name: Validate Prometheus + Alertmanager config
+        run: |
+          docker run --rm -v "${{ github.workspace }}/infra/monitoring/prometheus/rules:/rules:ro" \
+            prom/prometheus:v3.14.0 promtool check rules /rules/*.yml
+          docker run --rm -v "${{ github.workspace }}/infra/monitoring/alertmanager:/am:ro" \
+            prom/alertmanager:v0.28.0 amtool check-config /am/alertmanager.yml
+          docker run --rm -v "${{ github.workspace }}/infra/monitoring/prometheus:/prom:ro" \
+            prom/prometheus:v3.14.0 promtool check config /prom/prometheus.yml
 
   # ──────────────────────────────────────────────
   # Unit tests (only changed services)

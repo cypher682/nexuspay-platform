@@ -1,0 +1,80 @@
+# NexusPay alerting rules
+#
+# Alert thresholds (from docs/lab-roadmap.md Phase 2 deliverable):
+#   - error rate    > 1%   (warning)
+#   - p99 latency   > 2s   (warning)
+#   - queue depth   > 100  (page - consumers stalled)
+#   - SLO burn rate > 6x   (warning) / > 14.4x (page, budget gone in days)
+#   - target down          (page)
+#
+# Alerts route to Alertmanager (compose: alertmanager:9093) which emails
+# ops@nexuspay.local through Mailpit so every alert is visually inspectable
+# at http://localhost:8025.
+groups:
+  - name: nexuspay-alerting-rules
+    interval: 30s
+    rules:
+      # -- Availability ------------------------------------------------
+      - alert: NexusPayHighErrorRate
+        expr: nexuspay:http_error_ratio:rate5m > 0.01
+        for: 2m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "{{ $labels.service }} error rate above 1%"
+          description: "{{ $labels.service }} returned 5xx for {{ $value | humanizePercentage }} of requests over the last 5 minutes (SLO target 99.5%)."
+
+      # -- Latency ------------------------------------------------------
+      - alert: NexusPayHighP99Latency
+        expr: nexuspay:http_request_duration_seconds:p99:rate5m > 2.0
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "{{ $labels.service }} p99 latency above 2s"
+          description: "p99 latency for {{ $labels.service }} is {{ $value | humanizeDuration }} - breaches the 2s latency SLO."
+
+      # -- Queue depth ---------------------------------------------------
+      - alert: NexusPayPaymentsQueueBacklog
+        expr: payments_queue_depth{state=~"waiting|active|delayed"} > 100
+        for: 2m
+        labels:
+          severity: page
+          team: platform
+        annotations:
+          summary: "Payments queue backlog above 100 jobs"
+          description: "Payments worker backlog (waiting+active+delayed) is {{ $value }}. Consumers may be stalled - check the BullMQ worker and Redis."
+
+      # -- SLO burn-rate (multi-window) ---------------------------------
+      - alert: NexusPaySloCriticalBurn
+        expr: nexuspay:slo:burn_rate:1h > 14.4
+        for: 5m
+        labels:
+          severity: page
+          team: platform
+        annotations:
+          summary: "{{ $labels.service }} consuming 30-day error budget at >14.4x"
+          description: "At the current 1h error rate, {{ $labels.service }} will exhaust its 99.5% SLO budget in under 2 days (burn rate {{ printf \"%.1f\" $value }}x). Treat as an availability incident."
+
+      - alert: NexusPaySloWarningBurn
+        expr: nexuspay:slo:burn_rate:5m > 6
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "{{ $labels.service }} consuming 30-day error budget at >6x"
+          description: "{{ $labels.service }} error budget burn rate is {{ printf \"%.1f\" $value }}x - budget will empty in under 5 days if sustained."
+
+      # -- Availability (target) -----------------------------------------
+      - alert: NexusPayTargetDown
+        expr: up{job="nexuspay-services"} == 0
+        for: 1m
+        labels:
+          severity: page
+          team: platform
+        annotations:
+          summary: "{{ $labels.service }} is down"
+          description: "Prometheus cannot scrape {{ $labels.instance }} - unreachable for over a minute."

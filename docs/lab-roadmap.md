@@ -19,7 +19,7 @@
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| Docker Compose | ✅ Working | 7 containers, all healthy |
+| Docker Compose | ✅ Working | 13 containers, all healthy |
 | Dockerfiles | ✅ Optimized | Multi-stage, non-root, healthchecks, cache mounts |
 | Helm charts | ✅ Built | Library chart + 4 service charts with dev/prod values |
 | ArgoCD | ✅ Built | AppProject + ApplicationSet (matrix: services × environments) |
@@ -28,6 +28,8 @@
 | Bootstrap secrets | ✅ Built | Idempotent shell script |
 | OpenAPI spec | ✅ Done | 3.1 spec, 22 operations, Swagger UI at /docs/ |
 | Minikube guide | ✅ Done | 16-section guide with image loading, Helm deploy, smoke tests |
+| Observability stack | ✅ Done | Prometheus + Grafana + Jaeger + Loki + Alertmanager + OTel |
+| SLO/Alerting | ✅ Done | SLI recording rules + 6 alerting rules + Alertmanager -> Mailpit |
 
 ### What's missing (the roadmap)
 
@@ -78,36 +80,32 @@ on 5432 (compose remapped to 5433).
 
 **Why second:** You can't operate what you can't see. This gives you metrics, logs, traces, and dashboards.
 
-| # | What | Tool | Effort | What you practice |
-|---|------|------|--------|-------------------|
-| 2.1 | Prometheus metrics | prom-client + Helm | 4 hours | RED metrics, ServiceMonitor CRDs |
-| 2.2 | Grafana dashboards | Grafana Helm | 4 hours | Dashboard design, alert visualization |
-| 2.3 | Distributed tracing | OpenTelemetry SDK | 1 day | Trace context propagation, span creation |
-| 2.4 | Jaeger backend | Jaeger Helm | 2 hours | Trace storage, query UI |
-| 2.5 | Structured logging | Winston + JSON | 2 hours | Log correlation with trace IDs |
-| 2.6 | Loki log aggregation | Fluent Bit + Loki Helm | 4 hours | Log pipeline, label design |
-| 2.7 | Alerting rules | PrometheusRule CRDs | 4 hours | Alert design, severity levels |
-| 2.8 | SLO/SLI definitions | Prometheus recording rules | 4 hours | Error budgets, burn rate alerts |
+| # | What | Tool | Effort | What you practice | Status |
+|---|------|------|--------|-------------------|--------|
+| 2.1 | Prometheus metrics | prom-client + Helm | 4 hours | RED metrics, ServiceMonitor CRDs | ✅ |
+| 2.2 | Grafana dashboards | Grafana Helm | 4 hours | Dashboard design, alert visualization | ✅ |
+| 2.3 | Distributed tracing | OpenTelemetry SDK | 1 day | Trace context propagation, span creation | ✅ |
+| 2.4 | Jaeger backend | Jaeger Helm | 2 hours | Trace storage, query UI | ✅ |
+| 2.5 | Structured logging | Winston + JSON | 2 hours | Log correlation with trace IDs | ✅ |
+| 2.6 | Loki log aggregation | Fluent Bit + Loki Helm | 4 hours | Log pipeline, label design | ✅ |
+| 2.7 | Alerting rules | Prometheus rules + Alertmanager | 4 hours | Alert design, severity levels, on-call routing | ✅ |
+| 2.8 | SLO/SLI definitions | Prometheus recording rules | 4 hours | Error budgets, burn rate alerts | ✅ |
 
 **Deliverables:**
 - Grafana at `localhost:3000` with 4 dashboards (gateway, auth, payments, notifications)
 - Jaeger at `localhost:16686` showing request traces
 - Loki at `localhost:3100` with query UI
-- Alert rules for: error rate >1%, p99 latency >2s, queue depth >100
+- Alert rules for: error rate >1%, p99 latency >2s, queue depth >100, SLO burn rate (6x/14.4x), target down
+- SLO recording rules: 99.5% availability, p99 latency SLI, burn rate (5m/1h windows)
+- Alertmanager at `localhost:9093` routing alerts to Mailpit (`localhost:8025`) via SMTP
+- PrometheusRule CRD scaffold for k8s: `infra/kubernetes/alerts/nexuspay-alerts.yaml`
 
-**Files to create:**
+**Files created:**
 ```
-infra/kubernetes/helm/monitoring/
-  prometheus/
-  grafana/
-  jaeger/
-  loki/
-  fluent-bit/
-infra/kubernetes/alerts/
-  gateway-alerts.yaml
-  payments-alerts.yaml
-  notifications-alerts.yaml
-services/*/src/middleware/telemetry.ts (OTel instrumentation)
+infra/monitoring/prometheus/rules/recording_rules.yml   # SLO/SLI recording rules
+infra/monitoring/prometheus/rules/alerting_rules.yml     # alerting rules
+infra/monitoring/alertmanager/alertmanager.yml           # Alertmanager config (SMTP -> Mailpit)
+infra/kubernetes/alerts/nexuspay-alerts.yaml             # PrometheusRule CRD for k8s
 ```
 
 ---
@@ -301,6 +299,7 @@ docker compose up --build
 | Grafana | http://localhost:3000 |
 | Jaeger | http://localhost:16686 |
 | Prometheus | http://localhost:9090 |
+| Alertmanager | http://localhost:9093 |
 
 ### After Phase 3 (security)
 | Tool | URL |

@@ -1,0 +1,21 @@
+# NexusPay Alertmanager config (local compose).
+# Alerts are grouped by name+service and emailed to ops@nexuspay.local via the
+# Mailpit SMTP sink (mailpit:1025) so every fired/resolved alert is visible at
+# http://localhost:8025 without any external integration.
+global:
+  smtp_smarthost: "mailpit:1025"
+  smtp_from: "alertmanager@nexuspay.local"
+  smtp_require_tls: false
+
+route:
+  receiver: "ops-email"
+  group_by: ["alertname", "service"]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 12h
+
+receivers:
+  - name: "ops-email"
+    email_configs:
+      - to: "ops@nexuspay.local"
+        send_resolved: true
