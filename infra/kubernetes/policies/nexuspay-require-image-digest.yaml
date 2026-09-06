@@ -1,0 +1,13 @@
+# Phase 3.8 - Constraint: enforce digest-pinned images in Production.
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sRequireImageDigest
+metadata:
+  name: nexuspay-prod-image-digest-pinned
+spec:
+  enforcementAction: deny
+  match:
+    kinds:
+      - apiGroups: ["apps"]
+        kinds: ["Deployment", "StatefulSet"]
+    namespaces:
+      - nexuspay-prod

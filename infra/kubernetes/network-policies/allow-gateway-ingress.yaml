@@ -1,0 +1,42 @@
+# Allow external traffic into the API gateway only.
+# The gateway is the single entrypoint to the platform. All other services
+# are only reachable on the internal cluster network.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-gateway-ingress
+  namespace: nexuspay-dev
+  labels:
+    app.kubernetes.io/part-of: nexuspay
+    policy-type: ingress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: api-gateway
+  policyTypes:
+    - Ingress
+  ingress:
+    # External traffic (LoadBalancer / NodePort / Ingress controller).
+    - ports:
+        - protocol: TCP
+          port: 4000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-gateway-ingress
+  namespace: nexuspay-prod
+  labels:
+    app.kubernetes.io/part-of: nexuspay
+    policy-type: ingress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: api-gateway
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: 4000

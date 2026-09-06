@@ -30,6 +30,13 @@ env:
       secretKeyRef:
         name: nexuspay-shared
         key: jwt-secret
+        optional: false
+  - name: OLD_JWT_SECRETS
+    valueFrom:
+      secretKeyRef:
+        name: nexuspay-shared
+        key: old-jwt-secrets
+        optional: true
   - name: INTERNAL_API_KEY
     valueFrom:
       secretKeyRef:

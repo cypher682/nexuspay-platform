@@ -1,0 +1,92 @@
+# Least-privilege egress for app service pods.
+# Each service may only reach the data stores it actually needs, on the
+# exact ports those stores expose. Combined with deny-all, this is the core
+# "no lateral movement" story of the mesh.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-gateway-egress
+  namespace: nexuspay-dev
+  labels:
+    app.kubernetes.io/part-of: nexuspay
+    policy-type: egress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: api-gateway
+  policyTypes:
+    - Egress
+  egress:
+    # gateway -> auth / payments / notifications (same namespace)
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: auth-service
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: payments-service
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: notifications-service
+      ports:
+        - protocol: TCP
+          port: 4001
+        - protocol: TCP
+          port: 4002
+        - protocol: TCP
+          port: 4003
+    # gateway -> redis (rate limits + correlation IDs)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nexuspay-data
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-gateway-egress
+  namespace: nexuspay-prod
+  labels:
+    app.kubernetes.io/part-of: nexuspay
+    policy-type: egress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: api-gateway
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: auth-service
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: payments-service
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: notifications-service
+      ports:
+        - protocol: TCP
+          port: 4001
+        - protocol: TCP
+          port: 4002
+        - protocol: TCP
+          port: 4003
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nexuspay-data
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: redis
+      ports:
+        - protocol: TCP
+          port: 6379

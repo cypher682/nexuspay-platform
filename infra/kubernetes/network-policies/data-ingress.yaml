@@ -1,0 +1,180 @@
+# Ingress protection for the data stores in nexuspay-data.
+# Each store accepts traffic only from the app services that legitimately
+# depend on it, on its exact port. This is the counterpart to the per-service
+# egress policies in the app namespaces.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-ingress
+  namespace: nexuspay-data
+  labels:
+    app.kubernetes.io/part-of: nexuspay
+    policy-type: ingress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: postgresql
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nexuspay-dev
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: auth-service
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nexuspay-dev
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: payments-service
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nexuspay-dev
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: notifications-service
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nexuspay-prod
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: auth-service
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nexuspay-prod
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: payments-service
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nexuspay-prod
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: notifications-service
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redis-ingress
+  namespace: nexuspay-data
+  labels:
+    app.kubernetes.io/part-of: nexuspay
+    policy-type: ingress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: redis
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nexuspay-dev
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: api-gateway
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nexuspay-prod
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: api-gateway
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nexuspay-dev
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: payments-service
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nexuspay-prod
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: payments-service
+      ports:
+        - protocol: TCP
+          port: 6379
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: rabbitmq-ingress
+  namespace: nexuspay-data
+  labels:
+    app.kubernetes.io/part-of: nexuspay
+    policy-type: ingress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: rabbitmq
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nexuspay-dev
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: payments-service
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nexuspay-dev
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: notifications-service
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nexuspay-prod
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: payments-service
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nexuspay-prod
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: notifications-service
+      ports:
+        - protocol: TCP
+          port: 5672
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mailpit-ingress
+  namespace: nexuspay-data
+  labels:
+    app.kubernetes.io/part-of: nexuspay
+    policy-type: ingress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: mailpit
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nexuspay-dev
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: notifications-service
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nexuspay-prod
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: notifications-service
+      ports:
+        - protocol: TCP
+          port: 1025

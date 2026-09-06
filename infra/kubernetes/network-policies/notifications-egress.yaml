@@ -1,0 +1,94 @@
+# notifications-service egress: postgres (delivery state), rabbitmq (consume),
+# mailpit (SMTP transport).
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: notifications-egress
+  namespace: nexuspay-dev
+  labels:
+    app.kubernetes.io/part-of: nexuspay
+    policy-type: egress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: notifications-service
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nexuspay-data
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgresql
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nexuspay-data
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: rabbitmq
+      ports:
+        - protocol: TCP
+          port: 5672
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nexuspay-data
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: mailpit
+      ports:
+        - protocol: TCP
+          port: 1025
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: notifications-egress
+  namespace: nexuspay-prod
+  labels:
+    app.kubernetes.io/part-of: nexuspay
+    policy-type: egress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: notifications-service
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nexuspay-data
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgresql
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nexuspay-data
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: rabbitmq
+      ports:
+        - protocol: TCP
+          port: 5672
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nexuspay-data
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: mailpit
+      ports:
+        - protocol: TCP
+          port: 1025

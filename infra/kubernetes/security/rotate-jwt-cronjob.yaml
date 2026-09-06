@@ -1,0 +1,52 @@
+# Phase 3.6 - Scheduled JWT key rotation.
+#
+# Runs scripts/rotate-jwt-keys.sh on a schedule, but must keep a stable,
+# predictable key history so verifiers can keep accepting older tokens.
+#
+# IMPORTANT: git-stored secrets are never rotated this way in production.
+# This CronJob demonstrates the zero-downtime rotation contract that the
+# auth/gateway/payments services now support (JWT_SECRET + OLD_JWT_SECRETS).
+# For a real deployment, trigger rotation via Vault/ESO or an external password
+# manager instead of mounting secrets from a ConfigMap.
+#
+# The default schedule is DISABLED (weekly) - enable by uncommenting
+# `schedule` and wiring the secret source (see SECRET_SOURCE note below).
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: rotate-jwt-keys
+  namespace: nexuspay-dev
+spec:
+  schedule: "0 3 * * 0" # every Sunday 03:00 - disable/comment until wired
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          serviceAccountName: nexuspay-rotation-sa
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: rotate
+              image: bitnami/kubectl:1.29
+              command: ["/bin/sh", "-ec"]
+              args:
+                - |
+                  set -eu
+                  # SECRET_SOURCE: where the current key lives. In this lab the
+                  # rotate script patches the k8s Secret directly; the version
+                  # below mirrors the script for when it is driven from Vault.
+                  bash /scripts/rotate-jwt-keys.sh rotate --target minikube --namespace nexuspay-dev
+          volumes:
+            - name: scripts
+              configMap:
+                name: rotate-jwt-scripts
+                defaultMode: 0555

@@ -24,6 +24,7 @@ const envSchema = z.object({
   METRICS_ENABLED: boolFromEnv,
 
   JWT_SECRET: z.string().min(32),
+  OLD_JWT_SECRETS: z.string().default(""),
   AUTH_ISSUER: z.string().default("NexusPay"),
   PAYMENT_PROCESSING_TTL_SECONDS: z.coerce.number().int().positive().default(30),
   PROVIDER_WEBHOOK_SECRET: z.string().min(16),

@@ -189,6 +189,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push ${{ matrix.service }}
+        id: build-and-push
         uses: docker/build-push-action@v6
         with:
           context: services/${{ matrix.service }}
@@ -210,6 +211,35 @@ jobs:
           exit-code: 1
           ignore-unfixed: true
           format: table
+
+      # ── Phase 3.8: container image signing with Cosign ──────────────────
+      # Signs the pushed image with a Cosign key. The private key comes from a
+      # GitHub secret (base64), the public key is checked in (repo root) for
+      # offline verification by Gatekeeper.
+      # Generate once locally and configure the repo:
+      #   cosign generate-key-pair   -> cosign.key (secret), cosign.pub (repo root)
+      #   base64 -w0 cosign.key      -> paste as COSIGN_PRIVATE_KEY repo secret
+      # Skip signing when the private key is not configured (e.g. PRs/first run).
+      - name: Set up Cosign
+        uses: sigstore/cosign-installer@v3.7.0
+
+      - name: Sign ${{ matrix.service }} image
+        if: ${{ secrets.COSIGN_PRIVATE_KEY != '' }}
+        env:
+          COSIGN_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ""
+        run: |
+          cosign sign \
+            --key env://COSIGN_KEY \
+            --yes \
+            "${{ env.IMAGE_PREFIX }}-${{ matrix.service }}@${{ steps.build-and-push.outputs.digest }}"
+
+      - name: Verify ${{ matrix.service }} signature (public key)
+        if: ${{ secrets.COSIGN_PRIVATE_KEY != '' }}
+        run: |
+          cosign verify \
+            --key cosign.pub \
+            "${{ env.IMAGE_PREFIX }}-${{ matrix.service }}@${{ steps.build-and-push.outputs.digest }}"
 
   # ──────────────────────────────────────────────
   # Dependency audit + supply chain scan

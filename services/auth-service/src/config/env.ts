@@ -25,6 +25,7 @@ const envSchema = z.object({
   METRICS_ENABLED: boolFromEnv,
 
   JWT_SECRET: z.string().min(32),
+  OLD_JWT_SECRETS: z.string().default(""),
   JWT_ALGORITHM: z.enum(["HS256", "HS512"]).default("HS256"),
   ACCESS_TOKEN_TTL_MINUTES: z.coerce.number().int().positive().default(15),
   REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(7),

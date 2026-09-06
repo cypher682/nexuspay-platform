@@ -14,6 +14,9 @@ kubernetes/
 │       └── notifications-service/
 │           # each: Chart.yaml + values.yaml + values-dev.yaml + values-prod.yaml
 ├── policies/                 # Gatekeeper ConstraintTemplates + constraints (prod only)
+├── network-policies/         # deny-all default + least-privilege ingress/egress flows
+├── security/                 # Pod Security Admission labels (restricted)
+├── vault/                    # Vault dev server + ESO (ClusterSecretStore + ExternalSecrets)
 ├── data/                     # datastore install guide (bitnami postgres/redis/rabbitmq + mailpit)
 └── scripts/bootstrap-secrets.sh
 ```
@@ -39,7 +42,9 @@ for svc in api-gateway auth-service payments-service notifications-service; do
 done
 
 # 4. Policies then GitOps
-kubectl apply -f policies/
+kubectl apply -f security/pod-security.yaml   # PSA restricted on app namespaces
+kubectl apply -f network-policies/            # deny-all + least-privilege flows
+kubectl apply -f policies/                    # Gatekeeper admission policies
 kubectl apply -f argocd/project.yaml
 kubectl apply -f argocd/applicationset.yaml
 

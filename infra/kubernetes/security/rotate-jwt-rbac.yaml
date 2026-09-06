@@ -1,0 +1,41 @@
+# Phase 3.6 - RBAC for the JWT rotation CronJob.
+#
+# Least-privilege: the rotation ServiceAccount may only patch the single
+# nexuspay-shared Secret (and read rotation state) inside nexuspay-dev.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nexuspay-rotation-sa
+  namespace: nexuspay-dev
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: nexuspay-rotation
+  namespace: nexuspay-dev
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "patch"]
+    resourceNames: ["nexuspay-shared"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "create", "update", "patch"]
+    resourceNames: ["nexuspay-rotation-state"]
+  - apiGroups: ["apps"]
+    resources: ["deployments/restart"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nexuspay-rotation
+  namespace: nexuspay-dev
+subjects:
+  - kind: ServiceAccount
+    name: nexuspay-rotation-sa
+    namespace: nexuspay-dev
+roleRef:
+  kind: Role
+  name: nexuspay-rotation
+  apiGroup: rbac.authorization.k8s.io/v1

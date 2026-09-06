@@ -1,0 +1,38 @@
+# Phase 3.8 - ConstraintTemplate: require container images to be pinned by
+# digest (immutable tags). Works with plain Gatekeeper (as installed in this
+# lab) and enforces the supply-chain invariant that every Production image is
+# an immutable artifact rather than a mutable :latest-style tag.
+#
+# True cryptographic signature verification is enforced by sigstore
+# policy-controller (see signed-images.yaml). This constraint is the first,
+# always-on layer: mutable tags are rejected.
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8srequireimagedigest
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sRequireImageDigest
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8srequireimagedigest
+
+        # Extract every image reference (init + regular containers) from all
+        # workload kinds and flag any that is NOT pinned by a digest.
+        violation[{"msg": msg}] {
+          images := {img |
+            parts := {"containers", "initContainers", "ephemeralContainers"}
+            img := input.review.object.spec[parts[_]][_].image
+          }
+          bad := {i | i := images[_]; not is_digest_pinned(i)}
+          count(bad) > 0
+          msg := sprintf("image(s) must be pinned by digest (sha256:...), got: %v", [bad])
+        }
+
+        is_digest_pinned(image) {
+          # Matches <repo>@sha256:<64 hex>
+          regex.match(`@sha256:[0-9a-f]{64}$`, image)
+        }

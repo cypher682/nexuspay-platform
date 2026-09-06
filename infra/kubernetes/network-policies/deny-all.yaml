@@ -1,0 +1,51 @@
+# Deny-all NetworkPolicy: default deny all ingress + egress in the app namespace.
+# Applied *before* per-service policies so nothing is reachable unless explicitly allowed.
+# https://kubernetes.io/docs/concepts/services-networking/network-policies/#default-deny-all-ingress-and-egress-traffic
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-all-ingress-egress
+  namespace: nexuspay-dev
+  labels:
+    app.kubernetes.io/part-of: nexuspay
+    policy-type: global
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress: []
+  egress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-all-ingress-egress
+  namespace: nexuspay-prod
+  labels:
+    app.kubernetes.io/part-of: nexuspay
+    policy-type: global
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress: []
+  egress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-all-ingress-egress
+  namespace: nexuspay-data
+  labels:
+    app.kubernetes.io/part-of: nexuspay
+    policy-type: global
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress: []
+  egress: []

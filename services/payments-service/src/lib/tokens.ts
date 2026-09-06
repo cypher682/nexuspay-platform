@@ -23,18 +23,30 @@ export type AccessTokenPayload = {
 };
 
 export function verifyAccessToken(token: string): AccessTokenPayload {
-  let payload: Record<string, unknown>;
+  let payload: Record<string, unknown> | undefined;
 
-  try {
-    payload = jwt.verify(token, env.JWT_SECRET, {
-      algorithms: ["HS256"],
-      issuer: env.AUTH_ISSUER
-    }) as Record<string, unknown>;
-  } catch (err) {
-    if (err instanceof jwt.TokenExpiredError) {
-      throw new TokenVerificationError("TOKEN_EXPIRED", "Access token expired");
+  const keys = [env.JWT_SECRET, ...env.OLD_JWT_SECRETS.split(",").map((k) => k.trim()).filter(Boolean)];
+  let lastErr: unknown;
+  for (const key of keys) {
+    try {
+      payload = jwt.verify(token, key, {
+        algorithms: ["HS256"],
+        issuer: env.AUTH_ISSUER
+      }) as Record<string, unknown>;
+      break;
+    } catch (err) {
+      lastErr = err;
+      if (err instanceof jwt.TokenExpiredError) {
+        throw new TokenVerificationError("TOKEN_EXPIRED", "Access token expired");
+      }
     }
-    throw new TokenVerificationError("TOKEN_INVALID", "Invalid access token");
+  }
+
+  if (!payload) {
+    throw new TokenVerificationError(
+      "TOKEN_INVALID",
+      lastErr instanceof jwt.JsonWebTokenError ? "Invalid access token" : "Access token could not be verified"
+    );
   }
 
   if (payload.type !== "access") {

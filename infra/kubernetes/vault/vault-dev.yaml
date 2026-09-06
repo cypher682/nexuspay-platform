@@ -1,0 +1,204 @@
+# Phase 3.3 - In-cluster Vault dev server for the ESO/secret-rotation demo.
+#
+# Local lab only: root token in plaintext, in-memory storage, unsealed.
+# A production deployment pairs Vault with auto-unseal (KMS), a real root
+# unseal ceremony, and Kubernetes auth (service account bound roles) instead
+# of a static token.
+#
+# The compose stack ALSO runs a Vault on localhost:18200 (see
+# docker-compose.yml + scripts/vault-seed.sh) for dynamic Postgres creds.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nexuspay-data
+  labels:
+    app.kubernetes.io/part-of: nexuspay
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vault
+  namespace: nexuspay-data
+  labels:
+    app.kubernetes.io/name: vault
+    app.kubernetes.io/part-of: nexuspay
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vault
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: vault
+        app.kubernetes.io/part-of: nexuspay
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100
+        runAsGroup: 100
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: vault
+          image: hashicorp/vault:1.17.6
+          args:
+            - server
+            - -dev
+            - -dev-root-token-id=nexuspay-root-token
+          env:
+            - name: VAULT_DEV_LISTEN_ADDRESS
+              value: 0.0.0.0:8200
+            - name: VAULT_DEV_ROOT_TOKEN_ID
+              value: nexuspay-root-token
+            - name: VAULT_ADDR
+              value: http://localhost:8200
+          ports:
+            - containerPort: 8200
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /v1/sys/health
+              port: 8200
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vault
+  namespace: nexuspay-data
+spec:
+  selector:
+    app.kubernetes.io/name: vault
+  ports:
+    - port: 8200
+      targetPort: http
+      name: http
+---
+# A read-only policy for ESO / app secret access. The root token is only used
+# by the bootstrap Job below to mint a scoped token that ESO actually uses.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-policy
+  namespace: nexuspay-data
+data:
+  nexuspay-read.hcl: |
+    path "secret/data/nexuspay/*" {
+      capabilities = ["read"]
+    }
+---
+# The init Job runs as the vault user (UID 100, restricted). To create a Secret
+# in nexuspay-dev it needs a ServiceAccount with explicit RBAC. In this local
+# lab the operator bootstrap (scripts/vault-seed.sh or a one-off kubectl) can
+# create this Secret instead; this RBAC keeps the Job's intent explicit.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vault-init
+  namespace: nexuspay-data
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: vault-init-secrets
+  namespace: nexuspay-dev
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create", "get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: vault-init-secrets
+  namespace: nexuspay-dev
+subjects:
+  - kind: ServiceAccount
+    name: vault-init
+    namespace: nexuspay-data
+roleRef:
+  kind: Role
+  name: vault-init-secrets
+  apiGroup: rbac.authorization.k8s.io/v1
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: vault-init
+  namespace: nexuspay-data
+spec:
+  ttlSecondsAfterFinished: 300
+  template:
+    spec:
+      serviceAccountName: vault-init
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100
+        runAsGroup: 100
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: vault-init
+          image: hashicorp/vault:1.17.6
+          env:
+            - name: VAULT_ADDR
+              value: http://vault:8200
+            - name: VAULT_ROOT_TOKEN
+              value: nexuspay-root-token
+          volumeMounts:
+            - name: policy
+              mountPath: /policy
+              readOnly: true
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              set -eu
+              apk add --no-cache curl jq >/dev/null 2>&1
+              # Install kubectl into the vault user's HOME (writable under the
+              # restricted/runAsNonRoot profile - /usr/local/bin is not).
+              KUBE_DIR="${HOME}/bin"
+              mkdir -p "$KUBE_DIR"
+              curl -sfL -o "$KUBE_DIR/kubectl" \
+                "https://dl.k8s.io/release/v1.29.0/bin/linux/amd64/kubectl"
+              chmod +x "$KUBE_DIR/kubectl"
+              export PATH="$KUBE_DIR:$PATH"
+
+              timeout 60 bash -c 'until curl -sf $VAULT_ADDR/v1/sys/health >/dev/null; do sleep 1; done'
+
+              vault secrets enable -path=secret kv-v2
+
+              gen() { head -c 32 < /dev/urandom | base64 | tr -d '\n'; }
+              for k in JWT_SECRET INTERNAL_API_KEY WEBHOOK_SECRET; do
+                vault kv put "secret/nexuspay/$k" value="$(gen)"
+              done
+
+              vault policy write nexuspay-read /policy/nexuspay-read.hcl
+
+              TOKEN=$(vault token create -policy=nexuspay-read -ttl=24h -field=token)
+              kubectl create secret generic vault-token \
+                --namespace nexuspay-dev \
+                --from-literal=token="$TOKEN" \
+                --dry-run=client -o yaml | kubectl apply -f -
+              echo "vault-init done; scoped token issued to nexuspay-dev/vault-token"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+      volumes:
+        - name: policy
+          configMap:
+            name: vault-policy

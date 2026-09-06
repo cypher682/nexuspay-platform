@@ -64,10 +64,28 @@ export function createMfaChallengeToken(subject: string): string {
 }
 
 export function decodeToken(token: string): TokenPayload {
-  return jwt.verify(token, env.JWT_SECRET, {
-    algorithms: [env.JWT_ALGORITHM],
-    issuer
-  }) as TokenPayload;
+  try {
+    return jwt.verify(token, env.JWT_SECRET, {
+      algorithms: [env.JWT_ALGORITHM],
+      issuer
+    }) as TokenPayload;
+  } catch (err) {
+    const oldKeys = env.OLD_JWT_SECRETS
+      .split(",")
+      .map((k) => k.trim())
+      .filter(Boolean);
+    for (const key of oldKeys) {
+      try {
+        return jwt.verify(token, key, {
+          algorithms: [env.JWT_ALGORITHM],
+          issuer
+        }) as TokenPayload;
+      } catch {
+        // try next key
+      }
+    }
+    throw err;
+  }
 }
 
 export function isRefreshPayload(payload: TokenPayload): payload is RefreshTokenClaims {

@@ -1,0 +1,29 @@
+# Phase 3.8 - sigstore policy-controller ClusterImagePolicy.
+#
+# policy-controller is the in-cluster admission webhook that verifies Cosign
+# signatures cryptographically before a workload can be admitted. This
+# ClusterImagePolicy requires images from the NexusPay registry to carry a
+# valid signature made by the checked-in public key (cosign.pub).
+#
+# Install policy-controller once:
+#   helm repo add sigstore https://helm.sigstore.dev
+#   helm upgrade --install policy-controller sigstore/policy-controller \
+#     --namespace cosign-system --create-namespace \
+#     --set webhook.failurePolicy=Fail
+#
+# The public key below must match the private key used to sign in CI
+# (COSIGN_PRIVATE_KEY repo secret). Place cosign.pub at this path.
+# NOTE: this ClusterImagePolicy is scaffolded - the key data below is a
+# placeholder; replace with your real public key before enabling in prod.
+apiVersion: policy.sigstore.dev/v1beta1
+kind: ClusterImagePolicy
+metadata:
+  name: nexuspay-image-signature
+spec:
+  images:
+    - glob: "ghcr.io/cypher682/nexuspay-*"
+  authorities:
+    - key:
+        # Replace with your cosign.pub contents.
+        data: |
+          PLACEHOLDER_PUBLIC_KEY_FROM_cosign.pub

@@ -114,39 +114,48 @@ infra/kubernetes/alerts/nexuspay-alerts.yaml             # PrometheusRule CRD fo
 
 **Why third:** Now that you can see what's happening, lock it down. This is what interviewers care about most.
 
-| # | What | Tool | Effort | What you practice |
-|---|------|------|--------|-------------------|
-| 3.1 | Network policies (enforce) | K8s NetworkPolicy | 4 hours | Deny-all default, explicit allows |
-| 3.2 | Pod security standards | Pod Security Admission | 2 hours | Restricted profile enforcement |
-| 3.3 | Vault dev server | HashiCorp Vault | 1 day | Dynamic secrets, lease management |
-| 3.4 | External Secrets Operator | ESO + Vault | 4 hours | Secret sync, rotation |
-| 3.5 | WAF / ModSecurity | nginx-ingress + ModSecurity | 4 hours | OWASP CRS rules, false positive tuning |
-| 3.6 | JWT key rotation | CronJob + Vault | 4 hours | Automated rotation, zero-downtime |
-| 3.7 | RBAC audit | K8s RBAC + OPA | 4 hours | Least privilege, policy enforcement |
-| 3.8 | Image signing | Cosign | 2 hours | Supply chain security, verification |
+| # | What | Tool | Effort | What you practice | Status |
+|---|------|------|--------|-------------------|--------|
+| 3.1 | Network policies (enforce) | K8s NetworkPolicy | 4 hours | Deny-all default, explicit allows | ✅ |
+| 3.2 | Pod security standards | Pod Security Admission | 2 hours | Restricted profile enforcement | ✅ |
+| 3.3 | Vault dev server | HashiCorp Vault | 1 day | Dynamic secrets, lease management | ✅ |
+| 3.4 | External Secrets Operator | ESO + Vault | 4 hours | Secret sync, rotation | ✅ |
+| 3.5 | WAF / ModSecurity | nginx-ingress + ModSecurity | 4 hours | OWASP CRS rules, false positive tuning | ⬜ |
+| 3.6 | JWT key rotation | CronJob + Vault | 4 hours | Automated rotation, zero-downtime | ✅ |
+| 3.7 | RBAC audit | K8s RBAC + OPA | 4 hours | Least privilege, policy enforcement | ⬜ |
+| 3.8 | Image signing | Cosign | 2 hours | Supply chain security, verification | ✅ |
 
 **Deliverables:**
-- Vault UI at `localhost:8200` with dynamic database credentials
-- Network policies blocking all inter-pod traffic except gateway→services
+- Vault UI at `localhost:8200` (host `localhost:18200` on this Windows lab — 8200 sits in a default-excluded Hyper-V/WinNAT range) with dynamic database credentials
+- Network policies blocking all inter-pod traffic except explicit flows (deny-all + least-privilege ingress/egress)
+- PSA "restricted" enforced on app namespaces (`nexuspay-dev`, `nexuspay-prod`)
+- Dynamic Postgres creds issued by Vault, connect to Postgres, auto-revoked at 60s TTL (verified live)
+- Zero-downtime JWT rotation: services verify against `JWT_SECRET` + `OLD_JWT_SECRETS`; unit-tested
 - Cosign-signed images, verified in CI
 
-**Files to create:**
+**Files to create / created:**
 ```
-infra/kubernetes/vault/
-  vault-dev.yaml
-  external-secrets.yaml
-  vault-secrets.yaml
-infra/kubernetes/network-policies/
-  deny-all.yaml
-  allow-gateway-to-auth.yaml
-  allow-gateway-to-payments.yaml
-  allow-gateway-to-notifications.yaml
-  allow-payments-to-rabbitmq.yaml
+infra/kubernetes/vault/                 ✅ created (ESO + Vault dev server scaffold)
+  vault-dev.yaml                        ✅ (in-cluster Vault dev + scoped-token bootstrap Job)
+  external-secrets.yaml                 ✅ (operator version + ClusterSecretStore/SecretStore)
+  vault-secrets.yaml                    ✅ (ExternalSecrets mirroring bootstrap-secrets.sh)
+infra/kubernetes/network-policies/      ✅ created (8 files, 19 policy resources)
+  deny-all.yaml, allow-gateway-ingress.yaml, allow-dns-egress.yaml,
+  api-gateway-egress.yaml, auth-egress.yaml, payments-egress.yaml,
+  notifications-egress.yaml, data-ingress.yaml
 infra/kubernetes/security/
-  pod-security.yaml
-  waf-config.yaml
-scripts/rotate-jwt-keys.sh
+  pod-security.yaml                     ✅ created (PSA restricted on app namespaces)
+  waf-config.yaml                       ⬜
+scripts/vault-seed.sh                   ✅ created (Vault dynamic DB secrets, verified)
+scripts/rotate-jwt-keys.sh              ✅ created (zero-downtime rotation, verified via unit tests)
 ```
+
+**Phase 3.8 note:** Cosign signing steps were added to CI (`ci.yml` build job) + a
+Gatekeeper digest-pinning constraint + a sigstore policy-controller ClusterImagePolicy
+(`infra/kubernetes/policies/`). To activate signing, one manual one-time step is
+required: generate a Cosign key pair, store `cosign.key` (base64) as the
+`COSIGN_PRIVATE_KEY` repo secret, and place `cosign.pub` at the repo root (and paste
+its contents into `signed-images.yaml`). Until then CI skips signing/verify gracefully.
 
 ---
 
@@ -304,7 +313,7 @@ docker compose up --build
 ### After Phase 3 (security)
 | Tool | URL |
 |------|-----|
-| Vault | http://localhost:8200 |
+| Vault | http://localhost:18200 (Windows host; 8200 in-setup elsewhere) |
 
 ### After Phase 6 (DX)
 | Tool | URL |

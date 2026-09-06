@@ -1,0 +1,45 @@
+# Pod Security Admission (PSA) - enforce Kubernetes built-in Pod Security
+# Standards at the namespace level. "restricted" is the strongest standard:
+#   - disallows privileged containers, host namespaces/ports, hostPath
+#   - requires runAsNonRoot, seccomp RuntimeDefault
+#   - requires dropping ALL capabilities + allowPrivilegeEscalation=false
+#
+# The NexusPay Helm library already renders restricted-compliant workloads
+# (runAsNonRoot 1000/1000, RuntimeDefault seccomp, drop ALL caps), so this
+# labeling is the enforcement that turns "we designed it safely" into
+# "the cluster refuses anything that isn't".
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nexuspay-dev
+  labels:
+    app.kubernetes.io/part-of: nexuspay
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nexuspay-prod
+  labels:
+    app.kubernetes.io/part-of: nexuspay
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+# Data namespace is created manually during bootstrap (see infra/kubernetes/
+# data/README.md) - the labels below must be re-applied there too.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nexuspay-data
+  labels:
+    app.kubernetes.io/part-of: nexuspay
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: baseline
+    pod-security.kubernetes.io/warn: baseline
