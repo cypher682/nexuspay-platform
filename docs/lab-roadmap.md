@@ -157,6 +157,15 @@ required: generate a Cosign key pair, store `cosign.key` (base64) as the
 `COSIGN_PRIVATE_KEY` repo secret, and place `cosign.pub` at the repo root (and paste
 its contents into `signed-images.yaml`). Until then CI skips signing/verify gracefully.
 
+**Phase 3.5 / 3.7 status:** WAF/ModSecurity (3.5) and full RBAC audit (3.7) are
+**not yet built** — flagged open in the roadmap. The JWT-rotation RBAC
+(`security/rotate-jwt-rbac.yaml`) is a partial, scoped example. A full K8s RBAC
+audit + OPA policy is a distinct follow-up item.
+
+**Master reference:** `docs/engineering-reference.md` is the deep technical
+writing that explains every tool, maps each to "how big companies run it," and
+gives replication steps + article angles.
+
 ---
 
 ## Phase 4 — New Services
