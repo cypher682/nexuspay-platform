@@ -167,6 +167,11 @@ jobs:
     permissions:
       contents: read
       packages: write
+    env:
+      # Cosign private key (base64) for image signing. Empty until the
+      # COSIGN_PRIVATE_KEY repo secret is configured; when empty, signing and
+      # verification are skipped gracefully.
+      COSIGN_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
     strategy:
       fail-fast: false
       matrix:
@@ -224,9 +229,8 @@ jobs:
         uses: sigstore/cosign-installer@v3.7.0
 
       - name: Sign ${{ matrix.service }} image
-        if: ${{ secrets.COSIGN_PRIVATE_KEY != '' }}
+        if: ${{ env.COSIGN_KEY != '' }}
         env:
-          COSIGN_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
           COSIGN_PASSWORD: ""
         run: |
           cosign sign \
@@ -235,7 +239,7 @@ jobs:
             "${{ env.IMAGE_PREFIX }}-${{ matrix.service }}@${{ steps.build-and-push.outputs.digest }}"
 
       - name: Verify ${{ matrix.service }} signature (public key)
-        if: ${{ secrets.COSIGN_PRIVATE_KEY != '' }}
+        if: ${{ env.COSIGN_KEY != '' }}
         run: |
           cosign verify \
             --key cosign.pub \
