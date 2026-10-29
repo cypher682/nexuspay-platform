@@ -1,7 +1,7 @@
 image:
   repository: ghcr.io/cypher682/nexuspay-auth-service
-  tag: latest
-  pullPolicy: Always
+  digest: sha256:aa217a043dea386a527719b4c13278b34968471784b7d7c434361b8900465562
+  pullPolicy: IfNotPresent
 
 replicaCount: 3
 

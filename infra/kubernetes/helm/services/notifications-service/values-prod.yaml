@@ -1,7 +1,7 @@
 image:
   repository: ghcr.io/cypher682/nexuspay-notifications-service
-  tag: latest
-  pullPolicy: Always
+  digest: sha256:3a7f0c1ba7457f79585adcf06ef38ea2625c982efd9cf45d9516d095804f035b
+  pullPolicy: IfNotPresent
 
 replicaCount: 2
 
