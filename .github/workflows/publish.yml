@@ -1,0 +1,86 @@
+# Publish — build the four services for ARM64 and push them to GHCR.
+#
+# Flow: push to main -> "CI" (amd64 validation) -> this workflow fires only if it
+# succeeded. workflow_dispatch rebuilds the current main HEAD (or a chosen ref).
+#
+# Why arm64 here: the target cluster is a single-node k3s on an Ampere A4 (arm64)
+# while CI runners are amd64. Building the deployable image here guarantees an
+# arm64 tag exists for every service; ArgoCD then pulls these images.
+#
+# Deployment is GitOps (ArgoCD + the charts under infra/kubernetes/), so this
+# workflow deliberately does NOT touch the server. The legacy Compose/Caddy path
+# is kept in deploy/ as a documented fallback only.
+#
+# Required permissions: packages:write (uses the workflow GITHUB_TOKEN).
+
+name: Publish
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-nexuspay
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/nexuspay
+
+jobs:
+  build-and-push:
+    name: Publish ${{ matrix.service }} (arm64)
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    env:
+      TAG: ${{ github.event.workflow_run.head_sha || github.sha }}
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [api-gateway, auth-service, payments-service, notifications-service]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push ${{ matrix.service }}
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: services/${{ matrix.service }}
+          platforms: linux/arm64
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:${{ env.TAG }}
+            ${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:latest
+          # One cache scope per service so parallel matrix jobs do not fight over it.
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+      - name: Record digest
+        run: |
+          echo "### ${{ matrix.service }}" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "${{ env.IMAGE_PREFIX }}-${{ matrix.service }}@${{ steps.build.outputs.digest }}" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
