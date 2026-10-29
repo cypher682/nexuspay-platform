@@ -19,3 +19,7 @@
 ---
 {{- include "nexuspay-lib.servicemonitor" . }}
 {{- end }}
+{{- if .Values.ingress.enabled }}
+---
+{{- include "nexuspay-lib.ingress" . }}
+{{- end }}

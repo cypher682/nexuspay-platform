@@ -1,10 +1,25 @@
-# Prod overlay (AKS): ACR images pulled by digest-pinned tags set in CI,
-# wider autoscaling headroom, guaranteed floor of replicas.
+# Prod overlay (single-node k3s): arm64 images published to GHCR by the
+# "Publish" workflow. tag:latest + Always keeps restarts pulling the newest
+# build; pin by digest later when enabling the Gatekeeper digest constraint.
 image:
-  # CI replaces the tag with the pushed digest, e.g. "1.0.0@sha256:..."
-  repository: acrname.azurecr.io/nexuspay/api-gateway
-  tag: set-by-ci
+  repository: ghcr.io/cypher682/nexuspay-api-gateway
+  tag: latest
   pullPolicy: Always
+
+ingress:
+  enabled: true
+  className: traefik
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+  hosts:
+    - host: nexuspay.141-148-69-94.sslip.io
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - hosts:
+        - nexuspay.141-148-69-94.sslip.io
+      secretName: nexuspay-tls
 
 replicaCount: 3
 

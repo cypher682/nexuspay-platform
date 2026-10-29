@@ -34,5 +34,6 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 Service account for the workload
 */}}
 {{- define "nexuspay-lib.serviceAccountName" -}}
-{{- default (include "nexuspay-lib.fullname" .) .Values.serviceAccount.name }}
+{{- $sa := .Values.serviceAccount | default dict }}
+{{- default (include "nexuspay-lib.fullname" .) $sa.name }}
 {{- end }}

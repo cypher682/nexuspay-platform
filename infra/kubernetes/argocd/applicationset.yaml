@@ -14,11 +14,10 @@ spec:
               revision: main
               directories:
                 - path: infra/kubernetes/helm/services/*
-          # Cross-product with environments
+          # Single-node k3s: prod only. Add a dev element back on a bigger
+          # cluster; the prod overlay is the one wired to Traefik + cert-manager.
           - list:
               elements:
-                - env: dev
-                  namespace: nexuspay-dev
                 - env: prod
                   namespace: nexuspay-prod
   template:
@@ -35,6 +34,8 @@ spec:
         path: "{{ .path.path }}"
         helm:
           releaseName: "{{ .path.basename }}"
+          # Resolve the local file://../../nexuspay-lib dependency inside the clone.
+          dependencyUpdate: true
           valueFiles:
             - values.yaml
             - "values-{{ .env }}.yaml"

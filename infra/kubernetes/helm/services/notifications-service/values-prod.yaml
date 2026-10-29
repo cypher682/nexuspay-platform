@@ -1,6 +1,6 @@
 image:
-  repository: acrname.azurecr.io/nexuspay/notifications-service
-  tag: set-by-ci
+  repository: ghcr.io/cypher682/nexuspay-notifications-service
+  tag: latest
   pullPolicy: Always
 
 replicaCount: 2

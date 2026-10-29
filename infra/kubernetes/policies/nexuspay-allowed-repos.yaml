@@ -12,4 +12,4 @@ spec:
       - nexuspay-prod
   parameters:
     prefixes:
-      - acrname.azurecr.io/nexuspay/
+      - ghcr.io/cypher682/nexuspay-

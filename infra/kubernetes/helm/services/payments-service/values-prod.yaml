@@ -1,6 +1,6 @@
 image:
-  repository: acrname.azurecr.io/nexuspay/payments-service
-  tag: set-by-ci
+  repository: ghcr.io/cypher682/nexuspay-payments-service
+  tag: latest
   pullPolicy: Always
 
 replicaCount: 3

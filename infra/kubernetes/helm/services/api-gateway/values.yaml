@@ -12,6 +12,13 @@ service:
   type: ClusterIP
   port: 4000
 
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts: []
+  tls: []
+
 env:
   - name: LOG_LEVEL
     value: info

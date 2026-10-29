@@ -33,3 +33,6 @@ Thumbs.db
 
 # Misc
 *.tgz
+
+# Helm: vendored local dependency resolved by ArgoCD (helm.dependencyUpdate)
+infra/kubernetes/helm/services/*/charts/
