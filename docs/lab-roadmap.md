@@ -122,16 +122,20 @@ infra/kubernetes/alerts/nexuspay-alerts.yaml             # PrometheusRule CRD fo
 | 3.4 | External Secrets Operator | ESO + Vault | 4 hours | Secret sync, rotation | ✅ |
 | 3.5 | WAF / ModSecurity | nginx-ingress + ModSecurity | 4 hours | OWASP CRS rules, false positive tuning | ⬜ |
 | 3.6 | JWT key rotation | CronJob + Vault | 4 hours | Automated rotation, zero-downtime | ✅ |
-| 3.7 | RBAC audit | K8s RBAC + OPA | 4 hours | Least privilege, policy enforcement | ⬜ |
-| 3.8 | Image signing | Cosign | 2 hours | Supply chain security, verification | ✅ |
+| 3.7 | RBAC audit | K8s RBAC + OPA | 4 hours | Least privilege, policy enforcement | ✅ |
+| 3.8 | Image signing | Cosign | 2 hours | Supply chain security, verification | ✅ (scaffold) |
+| 3.9 | Admission policies | Gatekeeper + rego | 4 hours | Deny unpinned images, unapproved registries, missing limits | ✅ |
 
 **Deliverables:**
 - Vault UI at `localhost:8200` (host `localhost:18200` on this Windows lab — 8200 sits in a default-excluded Hyper-V/WinNAT range) with dynamic database credentials
-- Network policies blocking all inter-pod traffic except explicit flows (deny-all + least-privilege ingress/egress)
+- Network policies blocking all inter-pod traffic except explicit flows (deny-all + least-privilege ingress/egress), applied to `nexuspay-prod`/`nexuspay-data` and E2E-verified
 - PSA "restricted" enforced on app namespaces (`nexuspay-dev`, `nexuspay-prod`)
+- Gatekeeper denies unpinned images, non-GHCR repos and containers without requests/limits in `nexuspay-prod`
+- Service images pinned by digest (Deployments + PreSync migration Jobs)
 - Dynamic Postgres creds issued by Vault, connect to Postgres, auto-revoked at 60s TTL (verified live)
 - Zero-downtime JWT rotation: services verify against `JWT_SECRET` + `OLD_JWT_SECRETS`; unit-tested
-- Cosign-signed images, verified in CI
+- RBAC audited: no namespace Roles, no cluster bindings, SA tokens not mounted
+- Cosign signing wired in CI but inactive until a key pair is configured
 
 **Files to create / created:**
 ```
@@ -146,21 +150,36 @@ infra/kubernetes/network-policies/      ✅ created (8 files, 19 policy resource
 infra/kubernetes/security/
   pod-security.yaml                     ✅ created (PSA restricted on app namespaces)
   waf-config.yaml                       ⬜
+infra/kubernetes/policies/              ✅ applied (Gatekeeper 3.23.1 + 3 templates/constraints)
+infra/kubernetes/data/mailpit.yaml      ✅ created (SMTP sink, digest-pinned, no SA token)
 scripts/vault-seed.sh                   ✅ created (Vault dynamic DB secrets, verified)
 scripts/rotate-jwt-keys.sh              ✅ created (zero-downtime rotation, verified via unit tests)
 ```
 
-**Phase 3.8 note:** Cosign signing steps were added to CI (`ci.yml` build job) + a
-Gatekeeper digest-pinning constraint + a sigstore policy-controller ClusterImagePolicy
-(`infra/kubernetes/policies/`). To activate signing, one manual one-time step is
-required: generate a Cosign key pair, store `cosign.key` (base64) as the
-`COSIGN_PRIVATE_KEY` repo secret, and place `cosign.pub` at the repo root (and paste
-its contents into `signed-images.yaml`). Until then CI skips signing/verify gracefully.
+**Phase 3.8 note:** Cosign signing steps were added to CI (`ci.yml` build job).
+To activate signing, one manual one-time step is required: generate a Cosign key
+pair, store `cosign.key` (base64) as the `COSIGN_PRIVATE_KEY` repo secret, and
+place `cosign.pub` at the repo root (and paste its contents into
+`signed-images.yaml`). Until then CI skips signing/verify gracefully.
+policy-controller is not installed, so signature verification at admission is
+inactive; Gatekeeper's digest constraint is the live control.
 
-**Phase 3.5 / 3.7 status:** WAF/ModSecurity (3.5) and full RBAC audit (3.7) are
-**not yet built** — flagged open in the roadmap. The JWT-rotation RBAC
-(`security/rotate-jwt-rbac.yaml`) is a partial, scoped example. A full K8s RBAC
-audit + OPA policy is a distinct follow-up item.
+**Phase 3.5 / 3.7 / 3.9 status:** WAF/ModSecurity (3.5) is **not yet built** —
+Traefik owns 80/443 on this cluster, so adding ingress-nginx means a deliberate
+ingress-class migration. RBAC audit (3.7) is **done**: per-service SAs with
+`automountServiceAccountToken: false` (default SAs patched too), no Roles in
+`nexuspay-prod`, no ClusterRoleBindings for NexusPay identities; the only
+binding is the Bitnami rabbitmq endpoint-reader (Endpoints read only).
+Gatekeeper (3.9) is **live**: after switching off `enableK8sNativeValidation`
+(which pointed at an unserved `vap.k8s.io` engine and admitted everything) and
+fixing rego that read `spec.containers` instead of `spec.template.spec`, the
+three constraints deny `nginx:latest` and resource-less containers while
+admitting the digest-pinned manifests.
+
+**Still not GitOps-managed:** Gatekeeper, its constraints and the
+NetworkPolicies are applied with `kubectl`/`helm` by hand. Turning them into
+ArgoCD Applications needs the `nexuspay` AppProject's cluster-resource
+whitelist widened beyond `Namespace`; tracked as the next platform task.
 
 **Master reference:** `docs/engineering-reference.md` is the deep technical
 writing that explains every tool, maps each to "how big companies run it," and

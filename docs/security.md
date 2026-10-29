@@ -14,13 +14,38 @@ Policy file: `infra/kubernetes/network-policies/`
 | `allow-gateway-ingress.yaml` | Gateway accepts from outside the cluster (`ingress`) and anywhere inside |
 | `allow-dns-egress.yaml` | All pods can reach kube-dns/core-dns egress :53 |
 | `api-gateway-egress.yaml` | Gateway → auth/payments/notifications :4001/:4002/:4003 |
-| `auth-egress.yaml` | Auth → postgres :5432 |
+| `auth-egress.yaml` | Auth → postgres :5432, rabbitmq :5672 (verification/reset events) |
 | `payments-egress.yaml` | Payments → postgres :5432, redis :6379, rabbitmq :5672 |
 | `notifications-egress.yaml` | Notifications → postgres :5432, rabbitmq :5672, mailpit :1025 |
 | `data-ingress.yaml` | Postgres/redis/rabbitmq/mailpit accept only the correct app pods |
 
 `deny-all` is applied **after** the app-scoped Helm NetworkPolicies already
 rendered by `_workloads.tpl` so that no default-allow window exists.
+
+### What is enforced on k3s (verified 2026-10-29)
+
+Applied to `nexuspay-prod` and `nexuspay-data` (there is no `nexuspay-dev`
+namespace on the cluster; its documents in the same files are inert):
+
+- `deny-all` + per-service egress + data-store ingress, on top of the
+  Helm-rendered per-service policies (gateway `open`, internal services
+  `gateway-only`).
+- `notifications-service` had `networkPolicy.enabled: false`; once deny-all was
+  in place its pods had no ingress allow, and the gateway returned
+  `502 Downstream unavailable`. Enabled in `values.yaml` and re-verified.
+
+Full path exercised through Traefik on the public URL:
+
+| Check | Result |
+|---|---|
+| `/health/live`, `/health/ready` | 200 / 200 |
+| register 201 → verify-email 200 (token from Mailpit) → login 200 → `/v1/users/me` 200 | pass |
+| payment 201 → `SUCCEEDED` (`mock_...`) → receipt notification `SENT` | pass |
+| gateway → notifications :4003 | allowed |
+| gateway → postgres :5432, payments → notifications :4003, gateway → `1.1.1.1` | refused |
+
+`nexuspay-data` also gets the Bitnami charts' own policies; NetworkPolicies are
+additive, so the union is what applies.
 
 ## 2. Pod Security Admission (restricted)
 
@@ -74,28 +99,79 @@ Unit-tested in `services/auth-service/tests/tokens.rotation.test.ts` (accept
 new, accept old, reject unknown). A CronJob + least-privilege RBAC scaffold lives
 in `infra/kubernetes/security/rotate-jwt-{cronjob,rbac}.yaml`.
 
-## 6. Image signing (Cosign) + admission verification
+## 6. Admission control — Gatekeeper (live)
 
-- CI (`ci.yml` build job) signs each pushed image with `COSIGN_PRIVATE_KEY` and
-  verifies it with the checked-in `cosign.pub`.
-- Gatekeeper `K8sRequireImageDigest` constraint rejects any Prod workload image
-  not pinned by a `@sha256:` digest (`policies/k8srequireimagedigest-template.yaml`
-  + `policies/nexuspay-require-image-digest.yaml`).
-- sigstore policy-controller `ClusterImagePolicy` scaffold enforces the actual
-  cryptographic signature at admission (`policies/signed-images.yaml`).
+Installed `gatekeeper/gatekeeper` 3.23.1 via Helm (ns `gatekeeper-system`, one
+controller and one audit replica). `enableK8sNativeValidation` is off: with the
+chart default the constraints were pointed at a `vap.k8s.io` enforcement point
+that this k3s build does not serve, and constraint status reported
+`K8sNativeValidation engine is missing` while everything was admitted.
 
-To activate signing (one-time), see the note in `docs/lab-roadmap.md`.
+Templates and constraints live in `infra/kubernetes/policies/` and are scoped to
+`nexuspay-prod` Deployments/StatefulSets (init containers included):
+
+| Template | Constraint | Denies |
+|---|---|---|
+| `K8sRequireImageDigest` | `nexuspay-prod-image-digest-pinned` | image not `@sha256:`-pinned |
+| `K8sAllowedRepos` | `nexuspay-prod-approved-registries` | image outside `ghcr.io/cypher682/nexuspay-*` |
+| `K8sRequiredResources` | `nexuspay-prod-needs-limits` | container without requests **and** limits |
+
+All four service images are pinned by digest in `values-prod.yaml`;
+`_deployment.tpl` and `_migration.tpl` render `repo@digest` when `image.digest`
+is set, so the PreSync migration Job obeys the same policy.
+
+A bug caught during verification: the first revision of the rego read
+`spec.containers`, which only exists on Pods. Constraints match Deployments, so
+the rules saw zero containers and admitted everything — including
+`nginx:latest`. The templates now read `spec.template.spec.containers` as well
+as the Pod form, and the denial path was re-tested:
+
+| Request | Result |
+|---|---|
+| `nginx:latest` Deployment | denied by all three constraints |
+| digest-pinned image + requests/limits | admitted |
+| digest-pinned image, no resources | denied by `needs-limits` |
+
+## 7. Image signing (Cosign) — scaffold, not active
+
+- CI signs each pushed image with `COSIGN_PRIVATE_KEY` and verifies it with the
+  checked-in `cosign.pub` once that secret is configured.
+- `policies/signed-images.yaml` (`ClusterImagePolicy`) is not applied: it needs
+  sigstore policy-controller, which is not installed on this cluster.
+- The Gatekeeper digest constraint is the admission control that actually runs.
+
+## 8. RBAC posture (audited)
+
+- Each service has its own ServiceAccount with
+  `automountServiceAccountToken: false`; the `default` ServiceAccount in both
+  app and data namespaces was patched the same way.
+- No Role or RoleBinding exists in `nexuspay-prod`, and no ClusterRoleBinding
+  names a NexusPay service account. `kubectl auth can-i --list` for the app
+  identities returns only the built-in discovery verbs.
+- Accepted exception: the Bitnami rabbitmq chart mounts a token and binds
+  `rabbitmq-endpoint-reader` for peer discovery; it can read Endpoints only.
+- Mailpit also runs without a token; its manifest is now versioned at
+  `infra/kubernetes/data/mailpit.yaml` with the image pinned by digest.
 
 ## Summary of files
 
 ```
-infra/kubernetes/network-policies/   # 8 files, deny-all + explicit flows
+infra/kubernetes/network-policies/   # deny-all + explicit flows (prod/data applied)
+infra/kubernetes/data/mailpit.yaml   # SMTP sink, digest-pinned, no SA token
 infra/kubernetes/security/           # pod-security.yaml + jwt-rotation (cronjob/rbac)
 infra/kubernetes/vault/              # vault-dev.yaml, external-secrets.yaml, vault-secrets.yaml
-infra/kubernetes/policies/           # gatekeeper (allow-repos/required-res) + image digests + signed-images
+infra/kubernetes/policies/           # gatekeeper templates/constraints (digest, repos, limits)
 scripts/vault-seed.sh                # dynamic DB creds (verified)
 scripts/rotate-jwt-keys.sh           # zero-downtime key rotation
 services/*/src/config/env.ts        # +OLD_JWT_SECRETS
 services/*/src/lib/tokens.ts        # multi-key verify
 services/auth-service/tests/tokens.rotation.test.ts
 ```
+
+## 9. Still open
+
+- Gatekeeper, its constraints and the NetworkPolicies are applied by hand; they
+  are not yet reconciled by an ArgoCD Application (tracked in the roadmap).
+- No WAF / ingress-level rate limiting yet (Traefik owns 80/443; adding
+  ingress-nginx means migrating the ingress class first).
+- Cosign signing and policy-controller verification remain inactive.

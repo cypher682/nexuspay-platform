@@ -173,6 +173,12 @@ This is the flagship story. Six layers, each independently enforceable:
 - **Why:** default-deny network means a compromised pod can't freely move
   sideways. This is the difference between "app is secure" and "blast radius
   is bounded."
+- **Live on k3s:** the whole set is applied to `nexuspay-prod` + `nexuspay-data`
+  and verified end to end (register → verify email → login → payment →
+  notification). Negative checks: gateway→postgres, payments→notifications and
+  pod→internet all refused. One real bug surfaced here:
+  `notifications-service` shipped with `networkPolicy.enabled: false`, so once
+  deny-all landed its pods had no ingress allow and the gateway returned 502.
 
 ### 4.2 Pod Security Admission — refuse to run unsafe pods
 `infra/kubernetes/security/pod-security.yaml`
@@ -206,14 +212,37 @@ restricted-compliant workloads, so enforcement is possible without breakage.
 **The big-company concept:** rotate on a schedule, keep both keys during a grace
 window, sweep old keys after — the same pattern banks use for signing keys.
 
-### 4.5 Image signing + verification (supply chain)
-- CI signs with Cosign, verifies with the public key.
-- `policies/k8srequireimagedigest-template.yaml` : Gatekeeper rejects any prod
-  image not pinned by `@sha256:` digest (mutable tags forbidden).
-- `policies/signed-images.yaml` : sigstore policy-controller ClusterImagePolicy
-  for actual cryptographic signature verification at admission.
+### 4.5 Admission control — Gatekeeper (live)
+- Gatekeeper 3.23.1 (Helm, `gatekeeper-system`, 1 controller + 1 audit replica).
+  `enableK8sNativeValidation=false` — with the default, constraints target a
+  `vap.k8s.io` enforcement point that k3s does not serve, so everything was
+  silently admitted.
+- Three constraints scoped to `nexuspay-prod` Deployments/StatefulSets:
+  digest-pinned images, approved registries (`ghcr.io/cypher682/nexuspay-*`)
+  and mandatory requests+limits.
+- All four `values-prod.yaml` files pin `image.digest`; the shared templates
+  render `repo@sha256:...` for both Deployments and the PreSync migration Job.
+- **Bug worth telling:** the first rego read `spec.containers`, which only
+  exists on Pods — Deployments keep containers under `spec.template.spec`, so
+  the rules matched zero containers and admitted `nginx:latest`. Fixed and
+  re-verified: bad image denied by all three, good manifest admitted.
 
-### 4.6 Data encryption-at-rest / defense notes
+### 4.6 Image signing — scaffold, not active
+- CI signs with Cosign and verifies with the public key once
+  `COSIGN_PRIVATE_KEY` exists; until then it skips cleanly.
+- `policies/signed-images.yaml` (sigstore policy-controller) is not applied —
+  the controller is not installed. Gatekeeper's digest constraint is the
+  control that actually runs today.
+
+### 4.7 RBAC posture (audited)
+- Per-service ServiceAccounts with `automountServiceAccountToken: false`;
+  `default` SAs patched too. No Roles/RoleBindings in `nexuspay-prod`, no
+  ClusterRoleBinding for NexusPay identities; `auth can-i --list` shows only
+  discovery verbs.
+- Bitnami rabbitmq mounts a token for `rabbitmq-endpoint-reader` (Endpoints
+  read only) — the one accepted exception.
+
+### 4.8 Data encryption-at-rest / defense notes
 - Passwords hashed with bcrypt (async, rounds 12).
 - MFA via TOTP (otplib) — a shared secret per user.
 - (Audit follow-up flagged: encrypt MFA secrets + a durable idempotency scheme —
@@ -275,19 +304,21 @@ them perfect for incremental articles.
 ### Done (verifiable)
 - Phase 1 CI/CD: lint, test, build, Trivy, npm audit, openapi, k6 ✅ (all green)
 - Phase 2 Observability: RED metrics, Grafana, Jaeger, Loki, Alertmanager, SLO/burn-rate ✅
-- Phase 3 Security: NetworkPolicies, PSA, Vault dynamic creds (live-verified),
-  ESO scaffold, JWT rotation (unit-tested), Cosign + digest-pinning + policy-controller ✅
+- Phase 3 Security: NetworkPolicies + PSA + Gatekeeper constraints **enforced on
+  live k3s and E2E-verified**, digest-pinned images, Vault dynamic creds
+  (live-verified), ESO scaffold, JWT rotation (unit-tested), RBAC audited.
+  Cosign signing remains an inactive scaffold.
 
 ### Remaining in the roadmap
-- **Phase 3.5 WAF / ModSecurity** (nginx-ingress + OWASP CRS) — not built.
-- **Phase 3.7 RBAC audit** (K8s RBAC + OPA) — partially scaffolded only.
+- **Phase 3.5 WAF / ModSecurity** (nginx-ingress + OWASP CRS) — not built; needs
+  an ingress-class migration away from Traefik first.
+- **GitOps-ify the guardrails**: Gatekeeper, its constraints and the
+  NetworkPolicies are applied by hand today; they should become ArgoCD apps
+  (requires widening the AppProject cluster-resource whitelist).
 - **Activate Cosign**: generate a key pair, set `COSIGN_PRIVATE_KEY` repo
   secret, place `cosign.pub` at repo root + in `signed-images.yaml`.
 - **Deferred audits** (from earlier): MFA secret encryption at rest, durable
   idempotency, Trivy HIGH threshold vs CRITICAL, immutable image tags in dev.
-- **In-cluster verify**: manifests are declarative + validated, but not yet
-  enforced on a live minikube cluster (NetworkPolicy/PSA/ESO/webhooks need a
-  running cluster to prove).
 
 ### Phase 4+ (future)
 Fraud detection, feature flags, reporting; chaos engineering (Litmus); canary
