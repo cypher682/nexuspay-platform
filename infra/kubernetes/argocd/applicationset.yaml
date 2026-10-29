@@ -34,8 +34,6 @@ spec:
         path: "{{ .path.path }}"
         helm:
           releaseName: "{{ .path.basename }}"
-          # Resolve the local file://../../nexuspay-lib dependency inside the clone.
-          dependencyUpdate: true
           valueFiles:
             - values.yaml
             - "values-{{ .env }}.yaml"
