@@ -70,3 +70,9 @@ networkPolicy:
 serviceMonitor: # enable only after prom-client middleware lands (kube-prom-stack step)
   enabled: false
   interval: 30s
+
+migrations:
+  enabled: true
+  command: ["npx", "--no-install", "prisma", "migrate", "deploy"]
+  databaseSecret: payments-db
+  databaseSecretKey: url
