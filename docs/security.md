@@ -107,6 +107,19 @@ chart default the constraints were pointed at a `vap.k8s.io` enforcement point
 that this k3s build does not serve, and constraint status reported
 `K8sNativeValidation engine is missing` while everything was admitted.
 
+```bash
+helm repo add gatekeeper https://open-policy-agent.github.io/gatekeeper/charts
+helm upgrade --install gatekeeper gatekeeper/gatekeeper -n gatekeeper-system --create-namespace \
+  --set replicas=1 --set audit.replicas=1 --set enableK8sNativeValidation=false
+# templates + constraints only; signed-images.yaml needs policy-controller
+kubectl apply -f infra/kubernetes/policies/k8srequireimagedigest-template.yaml \
+  -f infra/kubernetes/policies/k8sallowedrepos-template.yaml \
+  -f infra/kubernetes/policies/k8srequiredresources-template.yaml \
+  -f infra/kubernetes/policies/nexuspay-require-image-digest.yaml \
+  -f infra/kubernetes/policies/nexuspay-allowed-repos.yaml \
+  -f infra/kubernetes/policies/nexuspay-required-resources.yaml
+```
+
 Templates and constraints live in `infra/kubernetes/policies/` and are scoped to
 `nexuspay-prod` Deployments/StatefulSets (init containers included):
 
