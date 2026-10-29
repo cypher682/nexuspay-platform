@@ -17,6 +17,13 @@ env:
     value: info
   - name: REDIS_URL
     value: redis://redis-master.nexuspay-data.svc.cluster.local:6379
+  - name: RABBITMQ_URL
+    valueFrom:
+      secretKeyRef:
+        name: rabbitmq-url
+        key: url
+  - name: PUBLIC_BASE_URL
+    value: https://nexuspay.141-148-69-94.sslip.io
   - name: MFA_ISSUER
     value: NexusPay
   - name: DATABASE_URL
