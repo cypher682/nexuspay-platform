@@ -15,7 +15,7 @@
   <img alt="Redis" src="https://img.shields.io/badge/Redis-7-dc382d?logo=redis&logoColor=white">
   <img alt="RabbitMQ" src="https://img.shields.io/badge/RabbitMQ-3.13-ff6600?logo=rabbitmq&logoColor=white">
   <img alt="Docker" src="https://img.shields.io/badge/Docker-Compose-2496ed?logo=docker&logoColor=white">
-  <img alt="Kubernetes" src="https://img.shields.io/badge/Kubernetes-Minikube-326ce5?logo=kubernetes&logoColor=white">
+  <img alt="Kubernetes" src="https://img.shields.io/badge/Kubernetes-k3s-326ce5?logo=kubernetes&logoColor=white">
   <img alt="ArgoCD" src="https://img.shields.io/badge/GitOps-ArgoCD-ef6b4a?logo=argo&logoColor=white">
   <img alt="Helm" src="https://img.shields.io/badge/Helm-3-0f1689?logo=helm&logoColor=white">
   <img alt="k6" src="https://img.shields.io/badge/Load_Testing-k6-7d64ff?logo=k6&logoColor=white">
@@ -42,6 +42,22 @@ well-run platform team, and demonstrates that you can design and operate the who
 > clean seams (a `MOCK_*` provider and Mailpit), so the platform is fully runnable offline with
 > no credentials. Everything else - auth, ledger, messaging, delivery state, CI/CD, GitOps,
 > observability - is the real thing.
+
+---
+
+## Live deployment
+
+Running on a **single-node k3s cluster** (Oracle Cloud ARM) and deployed entirely by GitOps:
+
+- **URL:** <https://nexuspay.141-148-69-94.sslip.io> — try `/health/ready` or `/v1/auth/register`
+- **Ingress + TLS:** Traefik + cert-manager (Let's Encrypt, HTTP-01)
+- **CD:** ArgoCD `ApplicationSet` watching `helm/services/*` on `main` (prod overlay)
+- **Images:** `linux/arm64` builds published to GHCR by `.github/workflows/publish.yml` after green CI
+- **Data:** PostgreSQL (3 logical databases), Redis, RabbitMQ, Mailpit in `nexuspay-data`
+- **Migrations:** Helm `pre-install,pre-upgrade` hook → ArgoCD PreSync (`prisma migrate deploy`)
+
+Full runbook, verification output, rollback and limitations:
+[docs/k3s-gitops-deployment.md](docs/k3s-gitops-deployment.md).
 
 ---
 
