@@ -1,0 +1,27 @@
+# NexusPay — Caddy reverse-proxy block
+#
+# Append this block to /opt/caddy/Caddyfile on the Oracle VM, then reload:
+#   docker exec caddy caddy reload --config /etc/caddy/Caddyfile
+#
+# Hostname uses sslip.io: <sub>.<ip-with-dashes>.sslip.io resolves to 141.148.69.94.
+# No DNS record needed; Caddy issues the certificate on the first request.
+#
+# Only the API gateway is published. Postgres, Redis, RabbitMQ, Mailpit and the
+# internal services stay on the private "internal" network and are never routed.
+
+nexuspay.141-148-69-94.sslip.io {
+	encode zstd gzip
+
+	# Optional: expose Grafana/Prometheus from the monitoring overlay behind basic
+	# auth. Never route these without auth — they can read metrics and config.
+	# handle /grafana* {
+	# 	basic_auth {
+	# 		admin <caddy-hash-password-output>
+	# 	}
+	# 	reverse_proxy grafana:3000
+	# }
+
+	handle {
+		reverse_proxy nexuspay-api-gateway:4000
+	}
+}

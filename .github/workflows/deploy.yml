@@ -1,0 +1,176 @@
+# CD — build the four services for the ARM VM, push to GHCR, deploy over SSH.
+#
+# Flow: push to main -> "CI" runs -> this workflow fires only if it succeeded.
+# workflow_dispatch redeploys the current main HEAD (or a chosen ref) manually.
+#
+# Why a second build: the VM is arm64 (Ampere A4) and CI runners are amd64. Building
+# the deployable image here (QEMU + buildx) keeps CI's amd64 image as the validation
+# artifact and guarantees every service has an arm64 tag for the deployed sha.
+#
+# Required repository secrets: DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY.
+# Optional: DEPLOY_PORT (default 22), GHCR_USER + GHCR_TOKEN (only if packages are private).
+# Application secrets are NOT here — they live in /opt/apps/nexuspay/.env on the server.
+#
+# Setup, one-time server prep, and rollback: docs/deployment/vps-caddy.md
+
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: deploy-nexuspay
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/nexuspay
+  PUBLIC_URL: https://nexuspay.141-148-69-94.sslip.io
+  REMOTE_DIR: /opt/apps/nexuspay
+
+jobs:
+  build-and-push:
+    name: Build ${{ matrix.service }} (arm64)
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    env:
+      TAG: ${{ github.event.workflow_run.head_sha || github.sha }}
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [api-gateway, auth-service, payments-service, notifications-service]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push ${{ matrix.service }}
+        uses: docker/build-push-action@v6
+        with:
+          context: services/${{ matrix.service }}
+          platforms: linux/arm64
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:${{ env.TAG }}
+            ${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:latest
+          # One cache scope per service so parallel matrix jobs do not fight over it.
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  deploy:
+    name: Deploy to Oracle VM
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.workflow_run.head_sha || github.sha }}
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Configure SSH
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$SSH_KEY" || { echo "::error::DEPLOY_SSH_KEY is empty"; exit 1; }
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/nexuspay_deploy
+          chmod 600 ~/.ssh/nexuspay_deploy
+          ssh-keyscan -p "${DEPLOY_PORT:-22}" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          echo "Pinned host key for ${DEPLOY_HOST}:${DEPLOY_PORT:-22}"
+
+      - name: Upload compose file and DB init script
+        run: |
+          set -euo pipefail
+          for pair in "deploy/docker-compose.prod.yml:docker-compose.yml" "scripts/init-multi-db.sh:init-multi-db.sh"; do
+            src="${pair%%:*}"; dst="${pair##*:}"
+            scp -i ~/.ssh/nexuspay_deploy \
+                -P "${DEPLOY_PORT:-22}" \
+                -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+                "$src" "${DEPLOY_USER}@${DEPLOY_HOST}:${REMOTE_DIR}/${dst}"
+            echo "Synced $src -> ${REMOTE_DIR}/${dst}"
+          done
+
+      - name: Pull, restart, wait for health
+        env:
+          GHCR_USER: ${{ secrets.GHCR_USER }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/nexuspay_deploy \
+              -p "${DEPLOY_PORT:-22}" \
+              -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+              "${DEPLOY_USER}@${DEPLOY_HOST}" \
+              "IMAGE_TAG='${TAG}' GHCR_USER='${GHCR_USER}' GHCR_TOKEN='${GHCR_TOKEN}' bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd /opt/apps/nexuspay
+
+          # Private packages? Then log in. Public packages: GHCR_TOKEN is empty and this is skipped.
+          if [ -n "${GHCR_TOKEN:-}" ]; then
+            printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "${GHCR_USER:-github-actions}" --password-stdin
+          fi
+
+          echo "Deploying image tag ${IMAGE_TAG}"
+          docker compose pull
+
+          if ! docker compose up -d --remove-orphans --wait --wait-timeout 360; then
+            echo "--- compose ps ---"
+            docker compose ps
+            for svc in api-gateway auth-service payments-service notifications-service; do
+              echo "--- $svc logs ---"
+              docker compose logs --tail 80 "$svc" || true
+            done
+            exit 1
+          fi
+
+          docker compose ps
+
+          # /health is a constant and would stay green with a dead database.
+          # `migrate status` talks to Postgres and exits non-zero if the schema is behind.
+          docker compose exec -T auth-service npx --no-install prisma migrate status
+
+          # Keep a week of previous sha tags on the host so a rollback is instant.
+          docker image prune -f --filter "until=168h" >/dev/null
+          REMOTE
+
+      - name: Verify the public endpoint
+        run: |
+          set -uo pipefail
+          for _ in $(seq 1 30); do
+            status=$(curl -sS -o /tmp/health.json -w '%{http_code}' -m 10 "$PUBLIC_URL/health" 2>/dev/null || true)
+            if [ "$status" = "200" ]; then
+              cat /tmp/health.json; echo
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "::error::$PUBLIC_URL/health did not return 200 (last status: ${status:-no response})."
+          echo "First deploy needs the Caddy block from deploy/Caddyfile.snippet — see docs/deployment/vps-caddy.md"
+          exit 1

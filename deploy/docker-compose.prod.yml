@@ -1,0 +1,220 @@
+# Production stack for NexusPay on the Oracle ARM VM (arm64).
+#
+# Mirrors the deploy pattern used by the other projects on this host:
+#   - Images are built and pushed to GHCR by .github/workflows/ci.yml (multi-arch).
+#     Nothing is built on the server.
+#   - Caddy is the only thing on 80/443; it reaches the gateway over the shared
+#     "web" network. No service publishes a host port.
+#   - Datastores live on "internal" (no egress). Only the gateway joins "web".
+#   - Secrets live in /opt/apps/nexuspay/.env on the host (chmod 600). This file
+#     is public, so it never contains a secret.
+#
+# Deploy: the workflow copies this file to /opt/apps/nexuspay/docker-compose.yml,
+# then runs `docker compose pull && docker compose up -d --wait`.
+# Rollback: set IMAGE_TAG to the previous commit sha and re-run the deploy job.
+
+name: nexuspay
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: nexuspay-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is missing from .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is missing from .env}
+      POSTGRES_MULTIPLE_DATABASES: nexuspay_auth,nexuspay_payments,nexuspay_notifications
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init-multi-db.sh:/docker-entrypoint-initdb.d/init-multi-db.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - internal
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: nexuspay-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - internal
+    restart: unless-stopped
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: nexuspay-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?RABBITMQ_USER is missing from .env}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is missing from .env}
+    volumes:
+      - rabbitmqdata:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+    networks:
+      - internal
+    restart: unless-stopped
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: nexuspay-mailpit
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8025/readyz"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    networks:
+      - internal
+    restart: unless-stopped
+
+  auth-service:
+    image: ghcr.io/cypher682/nexuspay-auth-service:${IMAGE_TAG:-latest}
+    container_name: nexuspay-auth-service
+    # Migrations run against the real database before the process takes traffic;
+    # if the schema is behind the container exits and `compose up --wait` fails.
+    command: ["sh", "-c", "npx --no-install prisma migrate deploy && node dist/main.js"]
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: "4001"
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/nexuspay_auth?schema=public
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672
+    expose:
+      - "4001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4001/health/live >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 45s
+    networks:
+      - internal
+    restart: unless-stopped
+
+  payments-service:
+    image: ghcr.io/cypher682/nexuspay-payments-service:${IMAGE_TAG:-latest}
+    container_name: nexuspay-payments-service
+    command: ["sh", "-c", "npx --no-install prisma migrate deploy && node dist/main.js"]
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: "4002"
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/nexuspay_payments?schema=public
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672
+    expose:
+      - "4002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4002/health/live >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 45s
+    networks:
+      - internal
+    restart: unless-stopped
+
+  notifications-service:
+    image: ghcr.io/cypher682/nexuspay-notifications-service:${IMAGE_TAG:-latest}
+    container_name: nexuspay-notifications-service
+    command: ["sh", "-c", "npx --no-install prisma migrate deploy && node dist/main.js"]
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: "4003"
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/nexuspay_notifications?schema=public
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672
+      SMTP_URL: smtp://mailpit:1025
+    expose:
+      - "4003"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4003/health/live >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 45s
+    networks:
+      - internal
+    restart: unless-stopped
+
+  api-gateway:
+    image: ghcr.io/cypher682/nexuspay-api-gateway:${IMAGE_TAG:-latest}
+    container_name: nexuspay-api-gateway
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: "4000"
+      REDIS_URL: redis://redis:6379
+      AUTH_SERVICE_URL: http://auth-service:4001
+      PAYMENTS_SERVICE_URL: http://payments-service:4002
+      NOTIFICATIONS_SERVICE_URL: http://notifications-service:4003
+    expose:
+      - "4000"
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      payments-service:
+        condition: service_healthy
+      notifications-service:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4000/health >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - internal
+      - web
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:
+  rabbitmqdata:
+
+networks:
+  # Created once by the Caddy stack: `docker network create web`.
+  web:
+    external: true
+  # No egress: datastores and internal services cannot reach the internet.
+  internal:
+    internal: true
