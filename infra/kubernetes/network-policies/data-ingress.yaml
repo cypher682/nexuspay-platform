@@ -124,6 +124,18 @@ spec:
               kubernetes.io/metadata.name: nexuspay-dev
           podSelector:
             matchLabels:
+              app.kubernetes.io/name: auth-service
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nexuspay-prod
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: auth-service
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nexuspay-dev
+          podSelector:
+            matchLabels:
               app.kubernetes.io/name: payments-service
         - namespaceSelector:
             matchLabels:

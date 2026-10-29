@@ -20,8 +20,14 @@ spec:
       rego: |
         package k8sallowedrepos
 
+        # Workloads put containers under spec.template.spec; Pods use spec.
+        containers[c] { c := input.review.object.spec.template.spec.containers[_] }
+        containers[c] { c := input.review.object.spec.template.spec.initContainers[_] }
+        containers[c] { c := input.review.object.spec.containers[_] }
+        containers[c] { c := input.review.object.spec.initContainers[_] }
+
         violation[{"msg": msg}] {
-          container := input.review.object.spec.containers[_]
+          container := containers[_]
           allowed := {p | p := input.parameters.prefixes[_]}
           not startswith_any(container.image, allowed)
           msg := sprintf("container <%v> image <%v> is not from an approved registry prefix", [container.name, container.image])

@@ -20,14 +20,14 @@ spec:
       rego: |
         package k8srequireimagedigest
 
-        # Extract every image reference (init + regular containers) from all
-        # workload kinds and flag any that is NOT pinned by a digest.
+        # Workloads put containers under spec.template.spec; Pods use spec.
+        image_refs[img] { img := input.review.object.spec.template.spec.containers[_].image }
+        image_refs[img] { img := input.review.object.spec.template.spec.initContainers[_].image }
+        image_refs[img] { img := input.review.object.spec.containers[_].image }
+        image_refs[img] { img := input.review.object.spec.initContainers[_].image }
+
         violation[{"msg": msg}] {
-          images := {img |
-            parts := {"containers", "initContainers", "ephemeralContainers"}
-            img := input.review.object.spec[parts[_]][_].image
-          }
-          bad := {i | i := images[_]; not is_digest_pinned(i)}
+          bad := {i | image_refs[i]; not is_digest_pinned(i)}
           count(bad) > 0
           msg := sprintf("image(s) must be pinned by digest (sha256:...), got: %v", [bad])
         }

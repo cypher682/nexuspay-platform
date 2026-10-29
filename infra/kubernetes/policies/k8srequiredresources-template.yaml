@@ -20,8 +20,14 @@ spec:
       rego: |
         package k8srequiredresources
 
+        # Workloads put containers under spec.template.spec; Pods use spec.
+        containers[c] { c := input.review.object.spec.template.spec.containers[_] }
+        containers[c] { c := input.review.object.spec.template.spec.initContainers[_] }
+        containers[c] { c := input.review.object.spec.containers[_] }
+        containers[c] { c := input.review.object.spec.initContainers[_] }
+
         violation[{"msg": msg}] {
-          container := input.review.object.spec.containers[_]
+          container := containers[_]
           fields := {f | f := input.parameters.requiredFields[_]}
           missing := {f | f := fields[_]; not container.resources[f]}
           count(missing) > 0

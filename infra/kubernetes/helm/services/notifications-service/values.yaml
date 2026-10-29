@@ -56,7 +56,7 @@ podDisruptionBudget:
   maxUnavailable: 1
 
 networkPolicy:
-  enabled: false
+  enabled: true
   mode: gateway-only
 
 serviceMonitor: # enable only after prom-client middleware lands (kube-prom-stack step)
