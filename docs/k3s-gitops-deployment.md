@@ -166,6 +166,78 @@ Then the payment settles asynchronously (`status: SUCCEEDED`, `providerRef: mock
 Certificate: `Certificate/nexuspay-tls` reports `Ready=True`, issuer
 `Let's Encrypt CN=YR1`, valid for the sslip.io hostname.
 
+## 6. Observability (Prometheus + Grafana + Alertmanager)
+
+Installed as a cluster add-on with Helm, like cert-manager and ArgoCD. The
+values live in the repo:
+
+```bash
+kubectl create namespace monitoring
+kubectl -n monitoring create secret generic grafana-admin \
+  --from-literal=admin-user=admin \
+  --from-literal=admin-password="$(openssl rand -base64 18)"
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+  -n monitoring --version 92.16.1 \
+  -f infra/kubernetes/monitoring/kube-prometheus-stack-values.yaml
+```
+
+Deliberately trimmed: 7 days / 8 GiB retention on a 10 GiB `local-path` volume,
+kube-prometheus-stack's bundled alert rules disabled (only the NexusPay rules
+run), Alertmanager routed to Mailpit (`mailpit.nexuspay-data:1025`), and
+Prometheus/Grafana/Alertmanager kept ClusterIP-only — no new public surface and
+Traefik is untouched.
+
+The four `ServiceMonitor`s are rendered by the Helm library chart
+(`serviceMonitor.enabled: true`). The SLO `PrometheusRule` and the NexusPay RED
+dashboard are delivered as ArgoCD apps (`nexuspay-platform-alerts`,
+`nexuspay-platform-dashboards`). `allow-metrics-ingress` is the only
+NetworkPolicy exception that lets the `monitoring` namespace scrape the app
+pods, and Mailpit's ingress allows SMTP from `monitoring` for Alertmanager.
+
+Verified 2026-10-30:
+
+```console
+$ kubectl -n nexuspay-prod get servicemonitor
+NAME                    AGE
+api-gateway             2m
+auth-service            2m
+notifications-service   2m
+payments-service        2m
+
+# Prometheus: all 11 prod pods up=1
+# 3 api-gateway, 3 auth-service, 3 payments-service, 2 notifications-service
+# rule groups: nexuspay-sli-recording-rules (5) + nexuspay-alerting-rules (6)
+# p99 recording series: api-gateway=0.00495s, others ~0.02s (4 services)
+
+$ kubectl -n monitoring get pods
+NAME                                                          READY   STATUS
+alertmanager-kube-prometheus-stack-alertmanager-0             2/2     Running
+kube-prometheus-stack-grafana-...                             3/3     Running
+kube-prometheus-stack-kube-state-metrics-...                  1/1     Running
+kube-prometheus-stack-operator-...                            1/1     Running
+kube-prometheus-stack-prometheus-node-exporter-...            1/1     Running
+prometheus-kube-prometheus-stack-prometheus-0                 2/2     Running
+```
+
+Grafana exposes 29 stock dashboards plus `NexusPay - RED metrics` (request rate,
+5xx ratio, p99, scrape targets) against the provisioned Prometheus datasource.
+Alerting round-trip: an injected `NexusPaySmokeTest` alert via `amtool` was
+delivered to Mailpit as `[FIRING:1] NexusPaySmokeTest -> alerts@nexuspay.local`,
+and a real `NexusPayTargetDown` fired and resolved while the metrics
+NetworkPolicy was being fixed.
+
+Access (never public):
+
+```bash
+kubectl -n monitoring port-forward svc/kube-prometheus-stack-grafana 3000:80
+kubectl -n monitoring port-forward svc/kube-prometheus-stack-prometheus 9090:9090
+kubectl -n monitoring port-forward svc/kube-prometheus-stack-alertmanager 9093:9093
+```
+
+The Grafana admin password is stored on the box in
+`~/.nexuspay-observability.env` (mode 600) and in the `grafana-admin` secret.
+
 ## Rollback
 
 The deploy artifact is the git commit. Reverting a commit and pushing is the rollback:
@@ -181,12 +253,14 @@ ArgoCD auto-syncs within its poll interval (or trigger it immediately by patchin
 
 - **Single node.** No HA, no node drain story, no control-plane redundancy. The overlay is
   prod-shaped but not prod-grade.
-- **`latest` tags.** Fast to iterate, but ArgoCD cannot diff image digests. Pinning by digest
-  (or enforcing `K8sRequireImageDigest`) is the hardening step before calling this production.
+- **Images are digest-pinned and enforced.** Gatekeeper rejects mutable tags and missing
+  resource limits in `nexuspay-prod`; ArgoCD diffs real digests.
 - **Co-tenancy.** Other projects on the box own port 80/443 through their own reverse proxy;
   Traefik only owns them once that proxy is stopped. Plan a path-based or host-based migration
   before adding more public services.
 - **Disk.** 84 GB ephemeral storage; local-path volumes are not backed up. Postgres and
-  RabbitMQ PVCs live on the node.
-- **Observability is not part of this deploy yet.** metrics-server powers HPAs; Prometheus,
-  Grafana, Loki and Jaeger still need to be installed (see `docs/observability.md`).
+  RabbitMQ PVCs live on the node, as does the 10 GiB Prometheus volume.
+- **Observability is metrics + alerting only on k3s.** Prometheus, Grafana and Alertmanager
+  are live; the OpenTelemetry SDK is wired in every service but tracing is disabled and no
+  Jaeger/Loki backend runs on the cluster. Single Prometheus, no HA or remote write; UIs are
+  reachable only through `kubectl port-forward`.

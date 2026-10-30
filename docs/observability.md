@@ -1,7 +1,11 @@
 # NexusPay Observability - Metrics, SLOs, Alerting
 
-The observability stack runs locally in Docker Compose at zero cloud spend and is the
-on-call signal path for the whole platform.
+Two deployment paths share one signal design. On the Oracle k3s box the
+**kube-prometheus-stack** runs live in the `monitoring` namespace (see
+`docs/k3s-gitops-deployment.md` §6); Prometheus scrapes the four service pods,
+Grafana serves 30 dashboards, and Alertmanager delivers to Mailpit. The Docker
+Compose stack below stays as the local/dev reference with the same rules,
+Alertmanager config and SLOs.
 
 ## Components
 
@@ -52,11 +56,20 @@ Alerts are grouped by `alertname` + `service`, deduped/repeated under
 `http://localhost:8025` - no external account required, so the full
 Prometheus -> Alertmanager -> notification path is verifiable locally.
 
-## k8s scaffolding
+## Kubernetes (live on k3s)
 
 `infra/kubernetes/alerts/nexuspay-alerts.yaml` is the same rule set as a
-`monitoring.coreos.com/v1` `PrometheusRule`, ready for a kube-prometheus install in
-minikube via ArgoCD.
+`monitoring.coreos.com/v1` `PrometheusRule`, reconciled by the
+`nexuspay-platform-alerts` ArgoCD app. The stack itself is a Helm add-on:
+
+```bash
+helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack   -n monitoring --version 92.16.1   -f infra/kubernetes/monitoring/kube-prometheus-stack-values.yaml
+```
+
+Verified 2026-10-30: 11/11 prod pods `up=1` via four ServiceMonitors, 5 SLO
+recording rules + 6 alerting rules loaded, NexusPay RED dashboard delivered as a
+GitOps ConfigMap, and an injected test alert delivered to Mailpit. Prometheus,
+Grafana and Alertmanager are ClusterIP-only; port-forward to reach them.
 
 ## Try it
 

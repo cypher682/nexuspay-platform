@@ -191,11 +191,12 @@ RED metrics show up in Grafana.
   ArgoCD `AppProject` + `ApplicationSet` (matrix generator over services x environments),
   Gatekeeper admission policies (allowed registries, required resources), secrets bootstrap
   script. See [`infra/kubernetes/`](infra/kubernetes/).
-- **Observability** - OpenTelemetry distributed tracing (`@opentelemetry/sdk-node`) across all
-  services routed to **Jaeger**; Prometheus **RED** metrics (`/metrics`); provisioned **Grafana**
-  dashboard; **Loki** for logs. SLO/SLI recording rules (99.5% availability, p99 <2s) with a
-  **burn-rate alert** pipeline: Prometheus rules fire -> **Alertmanager** -> alert emails land
-  in **Mailpit** (or your SMTP) for full local verification of the on-call signal path.
+- **Observability** - **kube-prometheus-stack live on k3s**: four ServiceMonitors scraping
+  Prometheus **RED** metrics (`/metrics`), 11/11 targets up, 30 Grafana dashboards (including a
+  NexusPay RED board delivered as a GitOps ConfigMap), and SLO/SLI recording rules (99.5%
+  availability, p99 <2s) with a **burn-rate alert** pipeline: Prometheus -> **Alertmanager** ->
+  emails in **Mailpit**, verified end-to-end. OpenTelemetry tracing SDK is wired into every
+  service but disabled; **no Jaeger/Loki backend runs on the cluster yet**.
 - **Load testing** - k6 suites for smoke / auth login / payment flows with tunable thresholds and
   a documented seed for a verified test user. See [`docs/k6-load-testing.md`](docs/k6-load-testing.md).
 - **API contract** - OpenAPI 3.1 spec validated against actual source routes in CI

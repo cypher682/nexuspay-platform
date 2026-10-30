@@ -28,8 +28,8 @@
 | Bootstrap secrets | ✅ Built | Idempotent shell script |
 | OpenAPI spec | ✅ Done | 3.1 spec, 22 operations, Swagger UI at /docs/ |
 | Minikube guide | ✅ Done | 16-section guide with image loading, Helm deploy, smoke tests |
-| Observability stack | ✅ Done | Prometheus + Grafana + Jaeger + Loki + Alertmanager + OTel |
-| SLO/Alerting | ✅ Done | SLI recording rules + 6 alerting rules + Alertmanager -> Mailpit |
+| Observability stack | ✅ Live on k3s | kube-prometheus-stack: Prometheus, Grafana, Alertmanager, kube-state-metrics, node-exporter; OTel SDK wired but tracing disabled, no Jaeger/Loki backend |
+| SLO/Alerting | ✅ Live on k3s | 5 SLI recording rules + 6 alerting rules reconciled by ArgoCD; Alertmanager -> Mailpit verified |
 
 ### What's missing (the roadmap)
 
@@ -80,32 +80,40 @@ on 5432 (compose remapped to 5433).
 
 **Why second:** You can't operate what you can't see. This gives you metrics, logs, traces, and dashboards.
 
+Live on k3s (verified 2026-10-30, see `docs/k3s-gitops-deployment.md` §6):
+
 | # | What | Tool | Effort | What you practice | Status |
 |---|------|------|--------|-------------------|--------|
-| 2.1 | Prometheus metrics | prom-client + Helm | 4 hours | RED metrics, ServiceMonitor CRDs | ✅ |
-| 2.2 | Grafana dashboards | Grafana Helm | 4 hours | Dashboard design, alert visualization | ✅ |
-| 2.3 | Distributed tracing | OpenTelemetry SDK | 1 day | Trace context propagation, span creation | ✅ |
-| 2.4 | Jaeger backend | Jaeger Helm | 2 hours | Trace storage, query UI | ✅ |
-| 2.5 | Structured logging | Winston + JSON | 2 hours | Log correlation with trace IDs | ✅ |
-| 2.6 | Loki log aggregation | Fluent Bit + Loki Helm | 4 hours | Log pipeline, label design | ✅ |
-| 2.7 | Alerting rules | Prometheus rules + Alertmanager | 4 hours | Alert design, severity levels, on-call routing | ✅ |
-| 2.8 | SLO/SLI definitions | Prometheus recording rules | 4 hours | Error budgets, burn rate alerts | ✅ |
+| 2.1 | Prometheus metrics | prom-client + ServiceMonitor | 4 hours | RED metrics, ServiceMonitor CRDs | ✅ k3s |
+| 2.2 | Grafana dashboards | kube-prometheus-stack | 4 hours | Dashboard design, GitOps ConfigMaps | ✅ k3s |
+| 2.7 | Alerting rules | PrometheusRule + Alertmanager | 4 hours | Alert design, severity levels, SMTP routing | ✅ k3s |
+| 2.8 | SLO/SLI definitions | Prometheus recording rules | 4 hours | Error budgets, burn rate alerts | ✅ k3s |
 
-**Deliverables:**
-- Grafana at `localhost:3000` with 4 dashboards (gateway, auth, payments, notifications)
-- Jaeger at `localhost:16686` showing request traces
-- Loki at `localhost:3100` with query UI
+Scaffolded, not running on k3s yet:
+
+| # | What | Tool | Effort | Why it is not done | Status |
+|---|------|------|--------|--------------------|--------|
+| 2.3 | Distributed tracing | OpenTelemetry SDK | 1 day | SDK initialised in all 4 services behind `OTEL_TRACES_ENABLED`, disabled until a backend exists | 🟡 |
+| 2.4 | Jaeger backend | Jaeger Helm | 2 hours | No trace backend deployed anywhere yet | ❌ |
+| 2.5 | Structured logging | Winston + JSON | 2 hours | Services emit JSON logs; no aggregation on k3s | 🟡 |
+| 2.6 | Loki log aggregation | Fluent Bit + Loki Helm | 4 hours | `infra/monitoring/loki/loki-config.yaml` exists, nothing deployed | 🟡 |
+
+**Deliverables (verified on k3s):**
+- Prometheus scrapes all four services through ServiceMonitors rendered by the Helm library chart — 11/11 pods `up=1`
+- Grafana with 29 stock dashboards plus `NexusPay - RED metrics` (request rate, 5xx ratio, p99, targets up), Prometheus + Alertmanager datasources auto-provisioned; ClusterIP only, reached with `kubectl port-forward`
+- Alertmanager routes to Mailpit (`mailpit.nexuspay-data:1025`); an injected `NexusPaySmokeTest` alert was delivered and a real `NexusPayTargetDown` fired and resolved during the metrics-NetworkPolicy fix
 - Alert rules for: error rate >1%, p99 latency >2s, queue depth >100, SLO burn rate (6x/14.4x), target down
-- SLO recording rules: 99.5% availability, p99 latency SLI, burn rate (5m/1h windows)
-- Alertmanager at `localhost:9093` routing alerts to Mailpit (`localhost:8025`) via SMTP
-- PrometheusRule CRD scaffold for k8s: `infra/kubernetes/alerts/nexuspay-alerts.yaml`
+- SLO recording rules: 99.5% availability, p99 latency SLI, burn rate (5m/1h windows) — 5 rules loaded, p99 series present for all 4 services
+- `allow-metrics-ingress` NetworkPolicy is the only scrape path; the monitoring namespace is otherwise outside the app policy set
 
-**Files created:**
+**Files:**
 ```
-infra/monitoring/prometheus/rules/recording_rules.yml   # SLO/SLI recording rules
-infra/monitoring/prometheus/rules/alerting_rules.yml     # alerting rules
-infra/monitoring/alertmanager/alertmanager.yml           # Alertmanager config (SMTP -> Mailpit)
-infra/kubernetes/alerts/nexuspay-alerts.yaml             # PrometheusRule CRD for k8s
+infra/kubernetes/monitoring/kube-prometheus-stack-values.yaml  # trimmed stack (7d, Mailpit, ClusterIP)
+infra/kubernetes/monitoring/dashboards/nexuspay-red-dashboard.yaml
+infra/kubernetes/alerts/nexuspay-alerts.yaml                   # SLO recording + alerting rules
+infra/kubernetes/network-policies/allow-metrics-ingress.yaml
+infra/monitoring/prometheus/rules/*.yml                        # Compose-era rules
+infra/monitoring/alertmanager/alertmanager.yml                 # Compose-era config
 ```
 
 ---

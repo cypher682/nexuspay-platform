@@ -115,12 +115,21 @@ green out of the box."
 
 ## 3. Observability (metrics, logs, traces, alerting, SLOs)
 
-Stack (docker-compose accross infra/monitoring/):
-**Prometheus** (metrics) + **Grafana** (dashboards) + **Jaeger/OTel** (traces)
-+ **Loki** (logs) + **Alertmanager** (alerting → Mailpit SMTP).
+Live on k3s as **kube-prometheus-stack** (Helm add-on): **Prometheus**
+(metrics, 7d retention) + **Grafana** (dashboards) + **Alertmanager**
+(alerting → Mailpit SMTP) + kube-state-metrics + node-exporter. Values live in
+`infra/kubernetes/monitoring/kube-prometheus-stack-values.yaml`.
+
+The **OTel SDK is wired into all four services** but `OTEL_TRACES_ENABLED` is
+false and no Jaeger backend exists on the cluster; Loki likewise has only a
+config file (`infra/monitoring/loki/`). Compose-era Prometheus/Alertmanager
+configs remain under `infra/monitoring/` for local runs.
 
 ### RED metrics per service
-Each service exposes `/metrics` via prom-client. The signal set is **RED**:
+Each service exposes `/metrics` via prom-client and the Helm library chart
+renders a `ServiceMonitor` when `serviceMonitor.enabled: true` (all four are
+enabled). Prometheus scrapes all 11 prod pods directly; the
+`allow-metrics-ingress` NetworkPolicy is the only path in. The signal set is **RED**:
 - **R**ate – requests/sec
 - **E**rrors – error rate (5xx / total)
 - **D**uration – latency histogram (p50/p95/p99)
@@ -128,8 +137,10 @@ Each service exposes `/metrics` via prom-client. The signal set is **RED**:
 These are the three numbers every backend SRE watches first.
 
 ### SLOs as recording rules
-`infra/monitoring/prometheus/rules/recording_rules.yml` precomputes SLIs so
-alerts are cheap and dashboards are fast:
+`infra/kubernetes/alerts/nexuspay-alerts.yaml` (reconciled by the
+`nexuspay-platform-alerts` ArgoCD app) precomputes SLIs so alerts are cheap and
+dashboards are fast — 5 recording rules loaded, p99 series present for all four
+services:
 - Availability SLI (99.5% target)
 - p99 latency SLI
 - Burn rate over 5m / 1h windows
@@ -139,23 +150,25 @@ X% of its 30-day budget in a short window, you page. Burn-rate alerts (6x /
 14.4x) catch fast and slow consumption.
 
 ### Alerting rules
-`alerting_rules.yml` fires on: error rate > 1%, p99 > 2s, queue depth > 100,
-SLO burn rate, target down. Alerts route to Alertmanager → mail / Mailpit.
+The same PrometheusRule fires on: error rate > 1%, p99 > 2s, queue depth > 100,
+SLO burn rate, target down. Alerts route to Alertmanager → Mailpit
+(`mailpit.nexuspay-data:1025`); delivery was verified end-to-end by injecting a
+test alert and by a real `NexusPayTargetDown` transition.
 
 ### Important gotcha
 Prometheus' `mul`/`div` template functions are **not defined** in annotations —
 use `humanizePercentage`, `humanizeDuration`, or `printf`. (Real bug fixed in
 this repo.)
 
-**Files:** `infra/monitoring/prometheus/rules/*.yml`, `alertmanager/alertmanager.yml`,
-`docs/observability.md`.
+**Files:** `infra/kubernetes/monitoring/` (stack values + RED dashboard),
+`infra/kubernetes/alerts/nexuspay-alerts.yaml`, `infra/monitoring/` (compose-era).
 
 > Replicate: add `/metrics` to your service, write RED recording rules, add
 > alert rules, wire Alertmanager to a mail target. That's a production-mimimal
 > SRE setup.
 
 → **Article angle:** "RED metrics, SLOs, and burn rates — a practical minimal
-observability stack for a microservice (Prometheus + Loki + Jaeger + Alertmanager)."
+observability stack for a microservice (Prometheus + Grafana + Alertmanager)."
 
 ---
 
@@ -306,7 +319,10 @@ them perfect for incremental articles.
 
 ### Done (verifiable)
 - Phase 1 CI/CD: lint, test, build, Trivy, npm audit, openapi, k6 ✅ (all green)
-- Phase 2 Observability: RED metrics, Grafana, Jaeger, Loki, Alertmanager, SLO/burn-rate ✅
+- Phase 2 Observability: kube-prometheus-stack on k3s — 4 ServiceMonitors,
+  11/11 targets up, Grafana with 30 dashboards (incl. NexusPay RED), 5 SLO
+  recording rules + 6 alerting rules, Alertmanager → Mailpit verified ✅.
+  Tracing SDK wired but disabled; Loki/Jaeger backends not deployed.
 - Phase 3 Security: NetworkPolicies + PSA + Gatekeeper constraints **enforced on
   live k3s and E2E-verified**, digest-pinned images, Vault dynamic creds
   (live-verified), ESO scaffold, JWT rotation (unit-tested), RBAC audited.

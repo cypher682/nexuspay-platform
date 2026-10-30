@@ -48,6 +48,14 @@ Full path exercised through Traefik on the public URL:
 additive, so the union is what applies. The files are reconciled by the
 `nexuspay-platform-netpol` ArgoCD app.
 
+Observability exception (added 2026-10-30): Prometheus lives in the
+`monitoring` namespace and scrapes the app pods directly, which deny-all would
+otherwise block. `allow-metrics-ingress` opens TCP 4000-4003 to pods labelled
+`app.kubernetes.io/name` in {api-gateway, auth-service, payments-service,
+notifications-service} from `monitoring` only. Mailpit's ingress now also
+accepts SMTP from `monitoring` so Alertmanager can deliver. No other inbound
+path into the app namespaces was added.
+
 ## 2. Pod Security Admission (restricted)
 
 File: `infra/kubernetes/security/pod-security.yaml`
@@ -175,6 +183,8 @@ self-heal put it back was the acceptance check.
 
 ```
 infra/kubernetes/network-policies/   # deny-all + explicit flows (prod/data applied)
+infra/kubernetes/monitoring/         # kube-prometheus-stack values + RED dashboard (ArgoCD)
+infra/kubernetes/alerts/             # SLO recording + alerting rules (ArgoCD)
 infra/kubernetes/data/mailpit.yaml   # SMTP sink, digest-pinned, no SA token
 infra/kubernetes/security/           # pod-security.yaml + jwt-rotation (cronjob/rbac)
 infra/kubernetes/vault/              # vault-dev.yaml, external-secrets.yaml, vault-secrets.yaml
