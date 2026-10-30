@@ -1,6 +1,8 @@
 apiVersion: constraints.gatekeeper.sh/v1beta1
 kind: K8sRequiredResources
 metadata:
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
   name: nexuspay-prod-needs-limits
 spec:
   enforcementAction: deny

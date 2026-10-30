@@ -1,0 +1,70 @@
+# Platform guardrails as ArgoCD apps (not part of the service ApplicationSet).
+# Gatekeeper itself is installed imperatively (cluster add-on, like cert-manager);
+# everything after that — constraint templates, constraints, NetworkPolicies —
+# is reconciled from this repo.
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: nexuspay-platform-policies
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: nexuspay
+    app.kubernetes.io/component: guardrails
+spec:
+  project: nexuspay
+  source:
+    repoURL: https://github.com/cypher682/nexuspay-platform.git
+    targetRevision: main
+    path: infra/kubernetes/policies
+    directory:
+      recurse: false
+      # sigstore policy-controller is not installed; applying this would fail.
+      exclude: signed-images.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: nexuspay-prod
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 20s
+        factor: 2
+        maxDuration: 5m
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: nexuspay-platform-netpol
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: nexuspay
+    app.kubernetes.io/component: guardrails
+spec:
+  project: nexuspay
+  source:
+    repoURL: https://github.com/cypher682/nexuspay-platform.git
+    targetRevision: main
+    path: infra/kubernetes/network-policies
+    directory:
+      recurse: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: nexuspay-prod
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 20s
+        factor: 2
+        maxDuration: 5m

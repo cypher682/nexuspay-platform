@@ -9,6 +9,8 @@
 apiVersion: templates.gatekeeper.sh/v1
 kind: ConstraintTemplate
 metadata:
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
   name: k8srequireimagedigest
 spec:
   crd:

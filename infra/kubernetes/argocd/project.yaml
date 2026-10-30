@@ -12,9 +12,21 @@ spec:
       namespace: nexuspay-dev
     - server: https://kubernetes.default.svc
       namespace: nexuspay-prod
+    - server: https://kubernetes.default.svc
+      namespace: nexuspay-data
   clusterResourceWhitelist:
     - group: ""
       kind: Namespace
+    # Guardrails are cluster-scoped; Gatekeeper itself stays an imperative
+    # cluster add-on, but its templates/constraints are reconciled from git.
+    - group: templates.gatekeeper.sh
+      kind: ConstraintTemplate
+    - group: constraints.gatekeeper.sh
+      kind: K8sRequireImageDigest
+    - group: constraints.gatekeeper.sh
+      kind: K8sAllowedRepos
+    - group: constraints.gatekeeper.sh
+      kind: K8sRequiredResources
   namespaceResourceBlacklist:
     - group: ""
       kind: ResourceQuota

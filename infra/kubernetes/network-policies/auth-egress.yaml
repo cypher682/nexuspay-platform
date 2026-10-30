@@ -1,42 +1,4 @@
-# auth-service egress: only its own database.
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: auth-egress
-  namespace: nexuspay-dev
-  labels:
-    app.kubernetes.io/part-of: nexuspay
-    policy-type: egress
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/name: auth-service
-  policyTypes:
-    - Egress
-  egress:
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: nexuspay-data
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/name: postgresql
-      ports:
-        - protocol: TCP
-          port: 5432
-    # auth publishes verification / password-reset events
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: nexuspay-data
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/name: rabbitmq
-      ports:
-        - protocol: TCP
-          port: 5672
----
+# auth-service egress: its own database + the event broker.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
