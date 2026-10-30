@@ -54,6 +54,8 @@ jobs:
               - 'services/payments-service/**'
             notifications:
               - 'services/notifications-service/**'
+            featureflags:
+              - 'services/feature-flags-service/**'
             infra:
               - 'docker-compose.yml'
               - '.env.example'
@@ -69,11 +71,12 @@ jobs:
           AUTH: ${{ steps.filter.outputs.auth }}
           PAYMENTS: ${{ steps.filter.outputs.payments }}
           NOTIFICATIONS: ${{ steps.filter.outputs.notifications }}
+          FEATUREFLAGS: ${{ steps.filter.outputs.featureflags }}
           INFRA: ${{ steps.filter.outputs.infra }}
           FORCE_ALL: ${{ github.event.inputs.force_all }}
         run: |
           if [ "$FORCE_ALL" = "true" ]; then
-            JSON='[{"service":"api-gateway"},{"service":"auth-service"},{"service":"payments-service"},{"service":"notifications-service"}]'
+            JSON='[{"service":"api-gateway"},{"service":"auth-service"},{"service":"payments-service"},{"service":"notifications-service"},{"service":"feature-flags-service"}]'
             INFRA_JSON=true
           else
             JSON="[]"
@@ -88,6 +91,7 @@ jobs:
             [ "$AUTH" = "true" ] && add auth-service
             [ "$PAYMENTS" = "true" ] && add payments-service
             [ "$NOTIFICATIONS" = "true" ] && add notifications-service
+            [ "$FEATUREFLAGS" = "true" ] && add feature-flags-service
             INFRA_JSON=$INFRA
           fi
           echo "json=$JSON" >> "$GITHUB_OUTPUT"
@@ -110,10 +114,11 @@ jobs:
             services/auth-service/package-lock.json
             services/payments-service/package-lock.json
             services/notifications-service/package-lock.json
+            services/feature-flags-service/package-lock.json
 
       - name: Install dependencies and lint/typecheck each service
         run: |
-          for svc in api-gateway auth-service payments-service notifications-service; do
+          for svc in api-gateway auth-service payments-service notifications-service feature-flags-service; do
             echo "::group::$svc"
             cd services/$svc
             npm ci --no-audit --no-fund
@@ -257,7 +262,7 @@ jobs:
       - name: npm audit (all services)
         run: |
           FAILED=0
-          for svc in api-gateway auth-service payments-service notifications-service; do
+          for svc in api-gateway auth-service payments-service notifications-service feature-flags-service; do
             echo "::group::$svc audit"
             cd services/$svc
             if [ -f package-lock.json ]; then npm ci --ignore-scripts 2>/dev/null; fi
@@ -308,11 +313,15 @@ jobs:
 
       - name: Apply Prisma migrations
         run: |
-          for svc in auth-service payments-service notifications-service; do
+          for svc in auth-service payments-service notifications-service feature-flags-service; do
             echo "::group::migrate $svc"
+            case "$svc" in
+              feature-flags-service) db=nexuspay_featureflags ;;
+              *) db="nexuspay_${svc%-service}" ;;
+            esac
             cd services/$svc
             npm ci --no-audit --no-fund
-            DATABASE_URL="postgresql://nexuspay:nexuspay@localhost:5433/nexuspay_${svc%-service}?schema=public" \
+            DATABASE_URL="postgresql://nexuspay:nexuspay@localhost:5433/${db}?schema=public" \
               npx prisma migrate deploy
             cd ../..
             echo "::endgroup::"

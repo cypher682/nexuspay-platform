@@ -36,6 +36,8 @@ tags:
     description: User profile management
   - name: Payments
     description: Payment creation, retrieval, capture, and refunds
+  - name: Feature Flags
+    description: Feature flag management, deterministic rollout evaluation and audit trail
   - name: Notifications
     description: Notification dispatch and retrieval
   - name: Webhooks
@@ -1141,6 +1143,272 @@ paths:
 # ═══════════════════════════════════════════════════════════════════════
 # Components
 # ═══════════════════════════════════════════════════════════════════════
+  # ── Feature Flags ──────────────────────────────────────────────────
+  /v1/flags:
+    get:
+      operationId: listFeatureFlags
+      tags: [Feature Flags]
+      summary: List feature flags
+      description: Lists flags for an environment. Requires a valid access token.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: environment
+          in: query
+          schema:
+            type: string
+            default: prod
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        "200":
+          description: Flags in the environment
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  environment:
+                    type: string
+                  count:
+                    type: integer
+                  flags:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/FeatureFlag"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      operationId: createFeatureFlag
+      tags: [Feature Flags]
+      summary: Create a feature flag
+      description: Requires the flags:admin scope (or the admin wildcard scope).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FeatureFlagInput"
+      responses:
+        "201":
+          description: Flag created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeatureFlag"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Missing flags:admin permission
+        "409":
+          description: Flag already exists in the environment
+        "422":
+          description: Validation error
+
+  /v1/flags/evaluate:
+    post:
+      operationId: evaluateFeatureFlags
+      tags: [Feature Flags]
+      summary: Evaluate flags for a subject
+      description: Evaluates all flags, or the requested keys, for a subject id.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                keys:
+                  type: array
+                  maxItems: 100
+                  items:
+                    type: string
+                subjectId:
+                  type: string
+                environment:
+                  type: string
+                  default: prod
+      responses:
+        "200":
+          description: Evaluation results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  environment:
+                    type: string
+                  evaluations:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/FeatureFlagEvaluation"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/flags/{key}:
+    get:
+      operationId: getFeatureFlag
+      tags: [Feature Flags]
+      summary: Get a feature flag
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/FeatureFlagKey"
+        - name: environment
+          in: query
+          schema:
+            type: string
+            default: prod
+      responses:
+        "200":
+          description: Flag
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeatureFlag"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updateFeatureFlag
+      tags: [Feature Flags]
+      summary: Update a feature flag
+      description: Requires the flags:admin scope. Every change is written to the flag audit log.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/FeatureFlagKey"
+        - name: environment
+          in: query
+          schema:
+            type: string
+            default: prod
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FeatureFlagPatch"
+      responses:
+        "200":
+          description: Updated flag
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeatureFlag"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Missing flags:admin permission
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          description: Validation error
+    delete:
+      operationId: deleteFeatureFlag
+      tags: [Feature Flags]
+      summary: Delete a feature flag
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/FeatureFlagKey"
+        - name: environment
+          in: query
+          schema:
+            type: string
+            default: prod
+      responses:
+        "204":
+          description: Flag deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Missing flags:admin permission
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/flags/{key}/evaluate:
+    post:
+      operationId: evaluateFeatureFlag
+      tags: [Feature Flags]
+      summary: Evaluate one feature flag
+      description: Deterministic for a given subject id; unknown flags return enabled=false with reason flag_not_found.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/FeatureFlagKey"
+        - name: environment
+          in: query
+          schema:
+            type: string
+            default: prod
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                subjectId:
+                  type: string
+      responses:
+        "200":
+          description: Evaluation result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeatureFlagEvaluation"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/flags/{key}/audit:
+    get:
+      operationId: listFeatureFlagAudit
+      tags: [Feature Flags]
+      summary: List audit entries for a flag
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/FeatureFlagKey"
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        "200":
+          description: Audit entries, newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                  entries:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Missing flags:admin permission
+        "404":
+          $ref: "#/components/responses/NotFound"
+
 components:
   # ── Security Schemes ────────────────────────────────────────────────
   securitySchemes:
@@ -1176,6 +1444,14 @@ components:
         maxLength: 128
       description: Unique idempotency key to prevent duplicate payment creation
       example: idem_a1b2c3d4e5f6g7h8i9j0
+    FeatureFlagKey:
+      name: key
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[a-z][a-z0-9._-]{1,63}$"
+      description: Feature flag key
 
   # ── Reusable Responses ──────────────────────────────────────────────
   responses:
@@ -1252,6 +1528,118 @@ components:
 
   # ── Schemas ─────────────────────────────────────────────────────────
   schemas:
+    FeatureFlag:
+      type: object
+      properties:
+        id:
+          type: string
+        key:
+          type: string
+        description:
+          type: string
+          nullable: true
+        enabled:
+          type: boolean
+        rolloutPercent:
+          type: integer
+          minimum: 0
+          maximum: 100
+        variants:
+          type: array
+          items:
+            type: string
+        allowlist:
+          type: array
+          items:
+            type: string
+        environment:
+          type: string
+        createdBy:
+          type: string
+          nullable: true
+        updatedBy:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    FeatureFlagInput:
+      type: object
+      required: [key]
+      properties:
+        key:
+          type: string
+          pattern: "^[a-z][a-z0-9._-]{1,63}$"
+        description:
+          type: string
+          maxLength: 280
+          nullable: true
+        enabled:
+          type: boolean
+        rolloutPercent:
+          type: integer
+          minimum: 0
+          maximum: 100
+        variants:
+          type: array
+          maxItems: 10
+          items:
+            type: string
+        allowlist:
+          type: array
+          maxItems: 500
+          items:
+            type: string
+        environment:
+          type: string
+          default: prod
+    FeatureFlagPatch:
+      type: object
+      properties:
+        description:
+          type: string
+          maxLength: 280
+          nullable: true
+        enabled:
+          type: boolean
+        rolloutPercent:
+          type: integer
+          minimum: 0
+          maximum: 100
+        variants:
+          type: array
+          maxItems: 10
+          items:
+            type: string
+        allowlist:
+          type: array
+          maxItems: 500
+          items:
+            type: string
+    FeatureFlagEvaluation:
+      type: object
+      properties:
+        key:
+          type: string
+        subjectId:
+          type: string
+        enabled:
+          type: boolean
+        variant:
+          type: string
+          nullable: true
+        reason:
+          type: string
+          enum:
+            - flag_disabled
+            - allowlist
+            - rollout
+            - not_in_rollout
+            - flag_not_found
+
 
     # ── Health ──────────────────────────────────────────────────────
     HealthStatus:

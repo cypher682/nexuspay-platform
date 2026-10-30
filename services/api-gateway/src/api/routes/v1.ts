@@ -97,4 +97,6 @@ router.use("/notifications", authenticate, (req, _res, next) => {
   next();
 }, proxy(env.NOTIFICATIONS_SERVICE_URL));
 
+router.use("/flags", authenticate, proxy(env.FEATURE_FLAGS_SERVICE_URL));
+
 export default router;

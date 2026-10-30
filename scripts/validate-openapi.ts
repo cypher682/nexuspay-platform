@@ -72,6 +72,7 @@ function extractRoutesFromCode(): SpecRoute[] {
           "reconciliation.routes.ts": "/v1/reconciliation",
           "notifications.routes.ts": "/v1/notifications",
           "templates.routes.ts": "/v1/templates",
+          "flags.routes.ts": "/v1/flags",
           "health.routes.ts": "/health",
         };
 
