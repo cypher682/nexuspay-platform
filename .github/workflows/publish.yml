@@ -1,4 +1,4 @@
-# Publish — build the four services for ARM64 and push them to GHCR.
+# Publish — build the services for ARM64 and push them to GHCR.
 #
 # Flow: push to main -> "CI" (amd64 validation) -> this workflow fires only if it
 # succeeded. workflow_dispatch rebuilds the current main HEAD (or a chosen ref).
@@ -44,7 +44,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [api-gateway, auth-service, payments-service, notifications-service]
+        service: [api-gateway, auth-service, payments-service, notifications-service, feature-flags-service]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
