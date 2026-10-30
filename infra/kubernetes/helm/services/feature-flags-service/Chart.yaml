@@ -1,0 +1,10 @@
+apiVersion: v2
+name: feature-flags-service
+description: NexusPay feature flags (deterministic rollout, allowlists, variants, audit)
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+dependencies:
+  - name: nexuspay-lib
+    version: 0.1.0
+    repository: file://../../nexuspay-lib

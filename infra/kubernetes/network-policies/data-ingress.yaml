@@ -36,6 +36,12 @@ spec:
           podSelector:
             matchLabels:
               app.kubernetes.io/name: notifications-service
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nexuspay-prod
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: feature-flags-service
       ports:
         - protocol: TCP
           port: 5432

@@ -30,6 +30,8 @@ env:
     value: http://payments-service:4002
   - name: NOTIFICATIONS_SERVICE_URL
     value: http://notifications-service:4003
+  - name: FEATURE_FLAGS_SERVICE_URL
+    value: http://feature-flags-service:4004
   - name: CORS_ORIGIN
     value: http://localhost:3000
   - name: JWT_SECRET

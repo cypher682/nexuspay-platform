@@ -1,0 +1,14 @@
+image:
+  repository: ghcr.io/cypher682/nexuspay-feature-flags-service
+  digest: sha256:31ab7b785cd810daedaa66a627ab07116c725183d3568bdddbd153befa533e8c
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+
+resources:
+  requests:
+    cpu: 75m
+    memory: 160Mi
+  limits:
+    cpu: 500m
+    memory: 384Mi

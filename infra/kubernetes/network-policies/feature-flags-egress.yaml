@@ -1,0 +1,26 @@
+# feature-flags-service egress: postgres only (flags + audit log).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: feature-flags-egress
+  namespace: nexuspay-prod
+  labels:
+    app.kubernetes.io/part-of: nexuspay
+    policy-type: egress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: feature-flags-service
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nexuspay-data
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgresql
+      ports:
+        - protocol: TCP
+          port: 5432
