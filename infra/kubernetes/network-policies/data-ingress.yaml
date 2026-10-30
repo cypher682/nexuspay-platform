@@ -126,6 +126,10 @@ spec:
     - Ingress
   ingress:
     - from:
+        # Alertmanager in the monitoring namespace delivers via SMTP.
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: nexuspay-prod

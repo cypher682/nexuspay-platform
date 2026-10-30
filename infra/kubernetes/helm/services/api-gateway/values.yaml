@@ -72,6 +72,6 @@ networkPolicy:
   enabled: true
   mode: open
 
-serviceMonitor: # enable only after prom-client middleware lands (kube-prom-stack step)
-  enabled: false
+serviceMonitor:
+  enabled: true
   interval: 30s

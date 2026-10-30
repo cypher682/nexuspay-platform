@@ -1,0 +1,108 @@
+# Trimmed kube-prometheus-stack for a single-node k3s lab.
+# Scope: scrape the NexusPay ServiceMonitors + node/kube-state metrics, keep
+# 7 days of data, route alerts to Mailpit. No ingress exposure; Grafana and
+# Prometheus are reached with kubectl port-forward.
+#
+# Grafana admin credentials live in Secret `grafana-admin` (key
+# `admin-password`) in the monitoring namespace — never in git.
+defaultRules:
+  create: false
+
+grafana:
+  admin:
+    existingSecret: grafana-admin
+  service:
+    type: ClusterIP
+  defaultDashboardsEnabled: true
+  resources:
+    requests:
+      cpu: 64m
+      memory: 192Mi
+    limits:
+      cpu: 500m
+      memory: 768Mi
+
+prometheus:
+  prometheusSpec:
+    retention: 7d
+    retentionSize: 8GB
+    # The ServiceMonitor/PrometheusRule manifests are not all labelled with the
+    # Helm release name; select them regardless of labels.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    resources:
+      requests:
+        cpu: 100m
+        memory: 512Mi
+      limits:
+        cpu: "1"
+        memory: 1Gi
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: local-path
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 10Gi
+
+alertmanager:
+  config:
+    global:
+      resolve_timeout: 5m
+      smtp_smarthost: mailpit.nexuspay-data.svc.cluster.local:1025
+      smtp_from: alertmanager@nexuspay.local
+      smtp_require_tls: false
+    route:
+      receiver: mailpit
+      group_by:
+        - alertname
+      group_wait: 10s
+      group_interval: 1m
+      repeat_interval: 4h
+    receivers:
+      - name: mailpit
+        email_configs:
+          - to: alerts@nexuspay.local
+            send_resolved: true
+      # The chart appends a Watchdog route to receiver "null"; keep it defined.
+      - name: "null"
+  alertmanagerSpec:
+    # Chart leaves spec.configSecret empty; the operator's default name lookup
+    # did not resolve, so pin it to the secret the chart renders.
+    configSecret: alertmanager-kube-prometheus-stack-alertmanager
+    resources:
+      requests:
+        cpu: 20m
+        memory: 64Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi
+
+prometheusOperator:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+kube-state-metrics:
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+prometheus-node-exporter:
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 96Mi

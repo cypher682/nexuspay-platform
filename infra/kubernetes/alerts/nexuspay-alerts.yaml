@@ -2,7 +2,7 @@ apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
   name: nexuspay-alerts
-  namespace: nexuspay
+  namespace: nexuspay-prod
   labels:
     app.kubernetes.io/part-of: nexuspay
     prometheus: kube-prometheus
@@ -85,7 +85,7 @@ spec:
             summary: "{{ $labels.service }} consuming 30-day error budget at >6x"
             description: "{{ $labels.service }} error budget burn rate is {{ printf \"%.1f\" $value }}x - budget will empty in under 5 days if sustained."
         - alert: NexusPayTargetDown
-          expr: up{job="nexuspay-services"} == 0
+          expr: up{namespace="nexuspay-prod"} == 0
           for: 1m
           labels:
             severity: page
