@@ -176,10 +176,11 @@ fixing rego that read `spec.containers` instead of `spec.template.spec`, the
 three constraints deny `nginx:latest` and resource-less containers while
 admitting the digest-pinned manifests.
 
-**Still not GitOps-managed:** Gatekeeper, its constraints and the
-NetworkPolicies are applied with `kubectl`/`helm` by hand. Turning them into
-ArgoCD Applications needs the `nexuspay` AppProject's cluster-resource
-whitelist widened beyond `Namespace`; tracked as the next platform task.
+**Guardrails are GitOps-managed:** `nexuspay-platform-policies` and
+`nexuspay-platform-netpol` reconcile the constraint templates/constraints and
+the NetworkPolicies (AppProject cluster whitelist widened to the Gatekeeper
+kinds). Gatekeeper itself is still installed imperatively, like cert-manager.
+Verified by deleting a constraint and watching self-heal recreate it.
 
 **Master reference:** `docs/engineering-reference.md` is the deep technical
 writing that explains every tool, maps each to "how big companies run it," and

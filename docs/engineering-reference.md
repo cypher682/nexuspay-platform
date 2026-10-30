@@ -226,6 +226,9 @@ window, sweep old keys after — the same pattern banks use for signing keys.
   exists on Pods — Deployments keep containers under `spec.template.spec`, so
   the rules matched zero containers and admitted `nginx:latest`. Fixed and
   re-verified: bad image denied by all three, good manifest admitted.
+- Templates/constraints and the NetworkPolicies now reconcile through the
+  `nexuspay-platform-policies` / `nexuspay-platform-netpol` ArgoCD apps;
+  Gatekeeper itself stays an imperative add-on.
 
 ### 4.6 Image signing — scaffold, not active
 - CI signs with Cosign and verifies with the public key once
@@ -312,9 +315,8 @@ them perfect for incremental articles.
 ### Remaining in the roadmap
 - **Phase 3.5 WAF / ModSecurity** (nginx-ingress + OWASP CRS) — not built; needs
   an ingress-class migration away from Traefik first.
-- **GitOps-ify the guardrails**: Gatekeeper, its constraints and the
-  NetworkPolicies are applied by hand today; they should become ArgoCD apps
-  (requires widening the AppProject cluster-resource whitelist).
+- **Ingress migration / WAF**: Traefik owns 80/443; moving to ingress-nginx to
+  add ModSecurity is the next open security item.
 - **Activate Cosign**: generate a key pair, set `COSIGN_PRIVATE_KEY` repo
   secret, place `cosign.pub` at repo root + in `signed-images.yaml`.
 - **Deferred audits** (from earlier): MFA secret encryption at rest, durable

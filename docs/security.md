@@ -45,7 +45,8 @@ Full path exercised through Traefik on the public URL:
 | gateway → postgres :5432, payments → notifications :4003, gateway → `1.1.1.1` | refused |
 
 `nexuspay-data` also gets the Bitnami charts' own policies; NetworkPolicies are
-additive, so the union is what applies.
+additive, so the union is what applies. The files are reconciled by the
+`nexuspay-platform-netpol` ArgoCD app.
 
 ## 2. Pod Security Admission (restricted)
 
@@ -145,6 +146,10 @@ as the Pod form, and the denial path was re-tested:
 | digest-pinned image + requests/limits | admitted |
 | digest-pinned image, no resources | denied by `needs-limits` |
 
+Templates and constraints are reconciled by the `nexuspay-platform-policies`
+ArgoCD app (templates on sync-wave -1). Deleting a constraint and watching
+self-heal put it back was the acceptance check.
+
 ## 7. Image signing (Cosign) — scaffold, not active
 
 - CI signs each pushed image with `COSIGN_PRIVATE_KEY` and verifies it with the
@@ -183,8 +188,10 @@ services/auth-service/tests/tokens.rotation.test.ts
 
 ## 9. Still open
 
-- Gatekeeper, its constraints and the NetworkPolicies are applied by hand; they
-  are not yet reconciled by an ArgoCD Application (tracked in the roadmap).
+- Gatekeeper itself is an imperative cluster add-on (like cert-manager). Its
+  templates, constraints and the NetworkPolicies are reconciled by two ArgoCD
+  apps, `nexuspay-platform-policies` and `nexuspay-platform-netpol`; a deleted
+  constraint was recreated by self-heal as a check.
 - No WAF / ingress-level rate limiting yet (Traefik owns 80/443; adding
   ingress-nginx means migrating the ingress class first).
 - Cosign signing and policy-controller verification remain inactive.
