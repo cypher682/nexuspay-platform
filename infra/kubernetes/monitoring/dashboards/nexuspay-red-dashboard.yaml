@@ -1,0 +1,112 @@
+# NexusPay RED dashboard, picked up by the Grafana dashboard sidecar.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nexuspay-red-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/part-of: nexuspay
+data:
+  nexuspay-red.json: |
+    {
+      "uid": "nexuspay-red",
+      "title": "NexusPay - RED metrics",
+      "tags": ["nexuspay", "slo"],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "30s",
+      "time": { "from": "now-1h", "to": "now" },
+      "templating": {
+        "list": [
+          {
+            "name": "service",
+            "label": "Service",
+            "type": "query",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "query": "label_values(http_requests_total, service)",
+            "includeAll": true,
+            "multi": true,
+            "allValue": ".*",
+            "current": { "text": "All", "value": "$__all" },
+            "refresh": 2
+          }
+        ]
+      },
+      "panels": [
+        {
+          "id": 1,
+          "type": "timeseries",
+          "title": "Request rate (req/s)",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "fieldConfig": {
+            "defaults": { "unit": "reqps", "custom": { "fillOpacity": 10, "lineWidth": 2 } },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (service) (rate(http_requests_total{service=~\"$service\"}[5m]))",
+              "legendFormat": "{{service}}"
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "type": "timeseries",
+          "title": "5xx error ratio",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "fieldConfig": {
+            "defaults": { "unit": "percentunit", "min": 0, "custom": { "fillOpacity": 10, "lineWidth": 2 } },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "nexuspay:http_error_ratio:rate5m{service=~\"$service\"}",
+              "legendFormat": "{{service}}"
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "type": "timeseries",
+          "title": "p99 latency",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "fieldConfig": {
+            "defaults": { "unit": "s", "custom": { "fillOpacity": 10, "lineWidth": 2 } },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "nexuspay:http_request_duration_seconds:p99:rate5m{service=~\"$service\"}",
+              "legendFormat": "{{service}}"
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "type": "stat",
+          "title": "Scrape targets up",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "fieldConfig": {
+            "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] } },
+            "overrides": []
+          },
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(up{namespace=\"nexuspay-prod\"})",
+              "legendFormat": "up"
+            }
+          ]
+        }
+      ]
+    }

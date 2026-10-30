@@ -14,6 +14,10 @@ spec:
       namespace: nexuspay-prod
     - server: https://kubernetes.default.svc
       namespace: nexuspay-data
+    # Grafana dashboard ConfigMaps only; the monitoring stack itself is a
+    # cluster add-on installed with Helm (like cert-manager and ArgoCD).
+    - server: https://kubernetes.default.svc
+      namespace: monitoring
   clusterResourceWhitelist:
     - group: ""
       kind: Namespace
