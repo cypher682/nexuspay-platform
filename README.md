@@ -53,7 +53,7 @@ Running on a **single-node k3s cluster** (Oracle Cloud ARM) and deployed entirel
 - **Ingress + TLS:** Traefik + cert-manager (Let's Encrypt, HTTP-01)
 - **CD:** ArgoCD `ApplicationSet` watching `helm/services/*` on `main` (prod overlay)
 - **Images:** `linux/arm64` builds published to GHCR by `.github/workflows/publish.yml` after green CI
-- **Data:** PostgreSQL (3 logical databases), Redis, RabbitMQ, Mailpit in `nexuspay-data`
+- **Data:** PostgreSQL (4 logical databases), Redis, RabbitMQ, Mailpit in `nexuspay-data`
 - **Migrations:** Helm `pre-install,pre-upgrade` hook → ArgoCD PreSync (`prisma migrate deploy`)
 
 Full runbook, verification output, rollback and limitations:
@@ -68,6 +68,7 @@ Full runbook, verification output, rollback and limitations:
 | **Identity & IAM** (`auth-service`) | Register/login, refresh-token rotation with **family reuse detection**, TOTP MFA, **RBAC permission scopes** embedded in JWTs, brute-force lockout, audit trail, email + password-reset verification |
 | **Payments** (`payments-service`) | **Idempotent** payment creation (Postgres + Redis locks), a strict **state machine**, **double-entry ledger** (balanced through refunds), HMAC-verified **provider webhooks**, scheduled **reconciliation** |
 | **Async Notifications** (`notifications-service`) | Event-driven via **RabbitMQ** topic exchange; templated email/SMS with delivery tracking and **dead-letter** handling for poison messages |
+| **Feature Flags** (`feature-flags-service`) | Kill switches, **deterministic percentage rollouts**, allowlists and A/B variants; audited CRUD behind the gateway, evaluated per subject |
 | **API Gateway** (`gateway`) | **JWT** validation, Redis sliding-window **rate limiting**, downstream **circuit breaker**, correlated request IDs, forwarded identity (headers scrubbed, set explicitly) |
 | **CI/CD** | Changed-service matrix detection, lint + typecheck, Jest unit tests, Docker **build + push to GHCR** with OCI cache, **Trivy** CVE scanning, `npm audit`, **OpenAPI drift validation + Spectral**, and a **k6 smoke test** against the full stack |
 | **GitOps** | Helm library chart + one per service, **ArgoCD** `AppProject` + `ApplicationSet`, **Gatekeeper** admission policies, secrets bootstrap |
@@ -99,6 +100,8 @@ Full runbook, verification output, rollback and limitations:
           v                          v                             v
    nexuspay_auth              nexuspay_payments            nexuspay_notifications
    (PostgreSQL)               (PostgreSQL)                 (PostgreSQL)
+
+   api-gateway --> feature-flags-service :4004 --> nexuspay_featureflags (PostgreSQL)
 ```
 
 - **Single entrypoint** - all traffic enters through the gateway (the only port published to
@@ -107,7 +110,8 @@ Full runbook, verification output, rollback and limitations:
   RabbitMQ **topic exchange**; notifications-service consumes them and enqueues templated
   receipt/status emails, routing unprocessable messages to a **dead-letter queue**.
 - **Separate data stores** - each service owns its Postgres database (`nexuspay_auth`,
-  `nexuspay_payments`, `nexuspay_notifications`) behind Prisma; cache/shared state in Redis.
+  `nexuspay_payments`, `nexuspay_notifications`, `nexuspay_featureflags`) behind Prisma;
+  cache/shared state in Redis.
 
 > Monetary amounts are stored as **integer minor units** (kobo/cents) - **no floats anywhere**.
 
@@ -121,6 +125,7 @@ Full runbook, verification output, rollback and limitations:
 | `auth-service` | 4001 | Register/login, refresh rotation with family reuse detection, TOTP MFA, RBAC, audit log, brute-force lockout |
 | `payments-service` | 4002 | Idempotent payment processing, double-entry ledger, state machine, HMAC-verified provider webhooks, reconciliation |
 | `notifications-service` | 4003 | Multi-channel delivery (email/SMS), template engine, RabbitMQ consumer, delivery tracking |
+| `feature-flags-service` | 4004 | Flag CRUD + audit, deterministic rollout/allowlist/variant evaluation, batch evaluation API |
 
 Every service: **TypeScript, Express 5, Prisma ORM, Zod validation, Winston structured logs,
 Jest tests, multi-stage Docker builds, health/readiness probes, non-root runtime user,
@@ -138,7 +143,7 @@ cd nexuspay-platform
 
 cp .env.example .env
 
-# Build & start the full stack (postgres, redis, rabbitmq, 4 services + observability)
+# Build & start the full stack (postgres, redis, rabbitmq, 5 services + observability)
 docker compose up -d --build
 
 # Apply database migrations for all services
@@ -224,7 +229,8 @@ nexuspay-platform/
 |   |-- api-gateway/          # :4000  edge router, authN, rate limits, circuit breaker
 |   |-- auth-service/         # :4001  IAM, MFA, RBAC, audit, lockout
 |   |-- payments-service/     # :4002  idempotent payments, double-entry ledger, webhooks
-|   `-- notifications-service/# :4003  email/SMS via RabbitMQ
+|   |-- notifications-service/# :4003  email/SMS via RabbitMQ
+|   `-- feature-flags-service/# :4004  flags, rollouts, variants, audit log
 |-- infra/
 |   |-- kubernetes/           # helm/, argocd/, policies/, data/, scripts/
 |   `-- monitoring/           # prometheus/, grafana/, loki/, jaeger (compose)
@@ -232,7 +238,7 @@ nexuspay-platform/
 |-- scripts/                  # openapi drift validation, test-user seed
 |-- docs/                     # architecture, minikube guide, roadmap, load findings
 |-- .github/workflows/ci.yml
-`-- docker-compose.yml        # local stack: postgres + redis + rabbitmq + 4 services + obs
+`-- docker-compose.yml        # local stack: postgres + redis + rabbitmq + 5 services + obs
 ```
 
 ---
@@ -245,6 +251,7 @@ nexuspay-platform/
 | [`docs/observability.md`](docs/observability.md) | Metrics, SLOs, and the alerting pipeline |
 | [`docs/minikube-deployment-guide.md`](docs/minikube-deployment-guide.md) | Full minikube/GitOps deployment walkthrough |
 | [`docs/k6-load-testing.md`](docs/k6-load-testing.md) | Load tests, thresholds, findings |
+| [`docs/feature-flags.md`](docs/feature-flags.md) | Flag model, evaluation algorithm, API, ops runbook |
 | [`docs/lab-roadmap.md`](docs/lab-roadmap.md) | 6-phase roadmap (all local, $0) |
 
 ---

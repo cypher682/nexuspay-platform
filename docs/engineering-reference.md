@@ -37,13 +37,13 @@ Everything below the application code lives in **infra/** and is declarative
 
 ```
 .
-├── services/                 # 4 microservices (gateway, auth, payments, notifications)
+├── services/                 # 5 microservices (gateway, auth, payments, notifications, feature flags)
 ├── k6/                       # load + smoke tests (performance gate)
 ├── docs/                     # architecture, runbooks, security, roadmap
 ├── infra/
 │   ├── monitoring/           # prometheus rules, alertmanager, loki/grafana config
 │   └── kubernetes/
-│       ├── helm/             # library chart + 4 service charts (dev/prod values)
+│       ├── helm/             # library chart + 5 service charts (dev/prod values)
 │       ├── argocd/           # AppProject + ApplicationSet (matrix)
 │       ├── policies/         # Gatekeeper admission policies
 │       ├── network-policies/ # deny-all + explicit flows
@@ -53,7 +53,7 @@ Everything below the application code lives in **infra/** and is declarative
 │       └── scripts/          # bootstrap-secrets.sh
 ├── scripts/                  # vault-seed.sh, rotate-jwt-keys.sh, openapi helpers
 ├── .github/workflows/ci.yml  # the entire pipeline
-└── docker-compose.yml        # local dev stack (14 services incl. vault)
+└── docker-compose.yml        # local dev stack (15 services incl. vault)
 ```
 
 **The big-company habit:** infrastructure is *code in the same repo* as the app
@@ -120,7 +120,7 @@ Live on k3s as **kube-prometheus-stack** (Helm add-on): **Prometheus**
 (alerting → Mailpit SMTP) + kube-state-metrics + node-exporter. Values live in
 `infra/kubernetes/monitoring/kube-prometheus-stack-values.yaml`.
 
-The **OTel SDK is wired into all four services** but `OTEL_TRACES_ENABLED` is
+The **OTel SDK is wired into all five services** but `OTEL_TRACES_ENABLED` is
 false and no Jaeger backend exists on the cluster; Loki likewise has only a
 config file (`infra/monitoring/loki/`). Compose-era Prometheus/Alertmanager
 configs remain under `infra/monitoring/` for local runs.
@@ -374,8 +374,8 @@ portfolio together.
 ## 9. One-paragraph pitch for interviews / LinkedIn
 
 > NexusPay is a microservice fintech platform I designed and built end-to-end:
-> four services, a CI/CD pipeline that lints, tests, scans (Trivy/npm audit),
-> signs (Cosign), and smoke-tests every change; a full observability stack with
+> five services, a CI/CD pipeline that lints, tests, scans (Trivy/npm audit),
+> and smoke-tests every change; a full observability stack with
 > RED metrics, SLOs, burn-rate alerts, distributed tracing, and log aggregation;
 > and a defense-in-depth security posture including default-deny network
 > policies, Pod Security Admission "restricted", HashiCorp Vault dynamic

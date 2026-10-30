@@ -15,6 +15,7 @@ Traefik (k3s ServiceLB, ports 80/443)
 api-gateway (3)  --->  auth-service (3)  --->  postgres-postgresql (nexuspay_auth)
    |                   payments-service (3) -->  postgres-postgresql (nexuspay_payments)
    |                   notifications-service -->  postgres-postgresql (nexuspay_notifications)
+   |                   feature-flags-service -->  postgres-postgresql (nexuspay_featureflags)
    |                                              redis-master
    |                                              rabbitmq (events)
    |                                              mailpit (SMTP, UI :8025)
@@ -188,7 +189,7 @@ run), Alertmanager routed to Mailpit (`mailpit.nexuspay-data:1025`), and
 Prometheus/Grafana/Alertmanager kept ClusterIP-only — no new public surface and
 Traefik is untouched.
 
-The four `ServiceMonitor`s are rendered by the Helm library chart
+The five `ServiceMonitor`s are rendered by the Helm library chart
 (`serviceMonitor.enabled: true`). The SLO `PrometheusRule` and the NexusPay RED
 dashboard are delivered as ArgoCD apps (`nexuspay-platform-alerts`,
 `nexuspay-platform-dashboards`). `allow-metrics-ingress` is the only
@@ -226,6 +227,16 @@ Alerting round-trip: an injected `NexusPaySmokeTest` alert via `amtool` was
 delivered to Mailpit as `[FIRING:1] NexusPaySmokeTest -> alerts@nexuspay.local`,
 and a real `NexusPayTargetDown` fired and resolved while the metrics
 NetworkPolicy was being fixed.
+
+### Feature flags (added 2026-10-31)
+
+`feature-flags-service` is deployed the same way as the other services: chart under
+`infra/kubernetes/helm/services/`, arm64 digest pinned in `values-prod.yaml`, PreSync
+migration Job against `nexuspay_featureflags`, ingress only from the gateway, egress only to
+postgres. Verified: app `Synced/Healthy`, 2/2 pods Ready, 13/13 prod pods `up=1`,
+`feature_flag_evaluations_total` incrementing, and the full CRUD → evaluate → audit path
+through `https://nexuspay.141-148-69-94.sslip.io/v1/flags` with an admin token. Design,
+API and runbook: [feature-flags.md](feature-flags.md).
 
 Access (never public):
 

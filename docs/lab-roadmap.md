@@ -6,7 +6,7 @@
 
 ## What Exists Now
 
-### Core Platform (4 services + infrastructure)
+### Core Platform (5 services + infrastructure)
 
 | Service | Status | Endpoints | What it does |
 |---------|--------|-----------|-------------|
@@ -14,6 +14,7 @@
 | auth-service :4001 | ✅ Done | 13 endpoints | Register, login, MFA (TOTP), RBAC, audit logs, brute-force protection |
 | payments-service :4002 | ✅ Done | 11 endpoints | Payment state machine, BullMQ worker, idempotency, webhooks, reconciliation, double-entry ledger |
 | notifications-service :4003 | ✅ Done | 6 endpoints | Email/SMS via RabbitMQ, templates, delivery attempts, retries |
+| feature-flags-service :4004 | ✅ Live on k3s | 8 endpoints | Flag CRUD + audit, deterministic rollout/allowlist/variant evaluation, batch evaluate |
 
 ### Infrastructure (scaffolded, not tested on minikube yet)
 
@@ -21,12 +22,12 @@
 |-----------|--------|-------|
 | Docker Compose | ✅ Working | 13 containers, all healthy |
 | Dockerfiles | ✅ Optimized | Multi-stage, non-root, healthchecks, cache mounts |
-| Helm charts | ✅ Built | Library chart + 4 service charts with dev/prod values |
+| Helm charts | ✅ Built | Library chart + 5 service charts with dev/prod values |
 | ArgoCD | ✅ Built | AppProject + ApplicationSet (matrix: services × environments) |
 | Gatekeeper policies | ✅ Built | Allowed repos + required resources (prod only) |
 | Network policies | ✅ Built | Gateway-only mode for internal services |
 | Bootstrap secrets | ✅ Built | Idempotent shell script |
-| OpenAPI spec | ✅ Done | 3.1 spec, 22 operations, Swagger UI at /docs/ |
+| OpenAPI spec | ✅ Done | 3.1 spec, 41 documented routes, Swagger UI at /docs/ |
 | Minikube guide | ✅ Done | 16-section guide with image loading, Helm deploy, smoke tests |
 | Observability stack | ✅ Live on k3s | kube-prometheus-stack: Prometheus, Grafana, Alertmanager, kube-state-metrics, node-exporter; OTel SDK wired but tracing disabled, no Jaeger/Loki backend |
 | SLO/Alerting | ✅ Live on k3s | 5 SLI recording rules + 6 alerting rules reconciled by ArgoCD; Alertmanager -> Mailpit verified |
@@ -99,11 +100,11 @@ Scaffolded, not running on k3s yet:
 | 2.6 | Loki log aggregation | Fluent Bit + Loki Helm | 4 hours | `infra/monitoring/loki/loki-config.yaml` exists, nothing deployed | 🟡 |
 
 **Deliverables (verified on k3s):**
-- Prometheus scrapes all four services through ServiceMonitors rendered by the Helm library chart — 11/11 pods `up=1`
+- Prometheus scrapes all five services through ServiceMonitors rendered by the Helm library chart — 13/13 pods `up=1`
 - Grafana with 29 stock dashboards plus `NexusPay - RED metrics` (request rate, 5xx ratio, p99, targets up), Prometheus + Alertmanager datasources auto-provisioned; ClusterIP only, reached with `kubectl port-forward`
 - Alertmanager routes to Mailpit (`mailpit.nexuspay-data:1025`); an injected `NexusPaySmokeTest` alert was delivered and a real `NexusPayTargetDown` fired and resolved during the metrics-NetworkPolicy fix
 - Alert rules for: error rate >1%, p99 latency >2s, queue depth >100, SLO burn rate (6x/14.4x), target down
-- SLO recording rules: 99.5% availability, p99 latency SLI, burn rate (5m/1h windows) — 5 rules loaded, p99 series present for all 4 services
+- SLO recording rules: 99.5% availability, p99 latency SLI, burn rate (5m/1h windows) — 5 rules loaded, p99 series present for all 5 services
 - `allow-metrics-ingress` NetworkPolicy is the only scrape path; the monitoring namespace is otherwise outside the app policy set
 
 **Files:**
@@ -216,12 +217,17 @@ gives replication steps + article angles.
 
 ### 4B. Feature Flags Service
 
-| # | What | Tool | Effort |
+**Status: shipped and verified live on k3s (2026-10-31).** Deviations from the original sketch:
+the store is Postgres (`nexuspay_featureflags`), not Redis; there is no in-process SDK yet —
+callers use the gateway-fronted HTTP API. The service adds an append-only audit log, variant
+assignment, allowlists and batch evaluation. Design and runbook: [feature-flags.md](feature-flags.md).
+
+| # | What | Tool | Status |
 |---|------|------|--------|
-| 4B.1 | Redis-backed flag store | Redis + Express | 4 hours |
-| 4B.2 | Flag evaluation middleware | Express middleware | 4 hours |
-| 4B.3 | Admin API | CRUD flags | 4 hours |
-| 4B.4 | SDK for services | Shared package | 4 hours |
+| 4B.1 | Flag store | Postgres + Prisma (was: Redis) | ✅ Done |
+| 4B.2 | Deterministic evaluation | SHA-256 bucket + allowlist + master switch | ✅ Done |
+| 4B.3 | Admin API | CRUD + audit, `flags:admin` scope | ✅ Done |
+| 4B.4 | SDK for services | Shared package | ❌ Not started (HTTP API instead) |
 
 **Use cases:** Toggle new payment providers, enable MFA for segments, kill-switch for notifications
 
@@ -236,9 +242,9 @@ gives replication steps + article angles.
 | 4C.5 | Export endpoints | CSV/JSON | 4 hours |
 
 **Deliverables:**
-- 3 new services running in minikube
+- 3 new services (fraud, flags, reporting) — flags shipped on k3s; fraud and reporting not started
 - Fraud checks visible in traces
-- Feature flags toggling behavior live
+- Feature flags toggling behavior live ✅
 - Revenue dashboard in Grafana
 
 ---
@@ -314,7 +320,7 @@ Week 1-2:  Phase 1 — CI/CD + k6 + container scanning
 Week 3-4:  Phase 2 — Prometheus + Grafana + Jaeger + Loki + alerts
 Week 5-6:  Phase 3 — Vault + network policies + pod security + WAF
 Week 7-8:  Phase 4A — Fraud detection service
-Week 9-10: Phase 4B-4C — Feature flags + reporting
+Week 9-10: Phase 4B-4C — Feature flags + reporting (4B shipped first, 2026-10-31)
 Week 11-12: Phase 5 — Chaos engineering + runbooks + DR
 Week 13-14: Phase 6 — Canary deploys + admin dashboard + docs
 ```
@@ -337,6 +343,7 @@ docker compose up --build
 | Auth Service | http://localhost:4001 |
 | Payments Service | http://localhost:4002 |
 | Notifications Service | http://localhost:4003 |
+| Feature Flags Service | http://localhost:4004 |
 | RabbitMQ UI | http://localhost:15672 |
 
 ### After Phase 2 (observability)
