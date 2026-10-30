@@ -11,8 +11,14 @@ metadata:
     policy-type: ingress
 spec:
   podSelector:
-    matchLabels:
-      app.kubernetes.io/part-of: nexuspay
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values:
+          - api-gateway
+          - auth-service
+          - payments-service
+          - notifications-service
   policyTypes:
     - Ingress
   ingress:
