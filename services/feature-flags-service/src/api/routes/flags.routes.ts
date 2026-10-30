@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Request } from "express";
 import { z } from "zod";
 import { authenticate, requireFlagAdmin } from "../../middleware/authenticate";
 import { asyncHandler } from "./utils";
@@ -65,6 +65,10 @@ const batchSchema = z.object({
   environment: environmentSchema.optional()
 });
 
+function keyParam(req: Request): string {
+  return String(req.params.key);
+}
+
 function subjectFor(req: { auth?: { userId: string } }, requested?: string): string {
   return requested ?? req.auth?.userId ?? "anonymous";
 }
@@ -104,7 +108,7 @@ router.get(
   authenticate,
   asyncHandler(async (req, res) => {
     const query = listQuerySchema.parse(req.query);
-    const flag = await getFlag(req.params.key, query.environment);
+    const flag = await getFlag(keyParam(req), query.environment);
     res.json(serializeFlag(flag));
   })
 );
@@ -127,7 +131,7 @@ router.patch(
   asyncHandler(async (req, res) => {
     const query = listQuerySchema.parse(req.query);
     const body = updateSchema.parse(req.body);
-    const flag = await updateFlag(req.params.key, query.environment, body, req.auth?.userId ?? null);
+    const flag = await updateFlag(keyParam(req), query.environment, body, req.auth?.userId ?? null);
     res.json(serializeFlag(flag));
   })
 );
@@ -138,7 +142,7 @@ router.delete(
   requireFlagAdmin,
   asyncHandler(async (req, res) => {
     const query = listQuerySchema.parse(req.query);
-    await deleteFlag(req.params.key, query.environment, req.auth?.userId ?? null);
+    await deleteFlag(keyParam(req), query.environment, req.auth?.userId ?? null);
     res.status(204).send();
   })
 );
@@ -149,7 +153,7 @@ router.get(
   requireFlagAdmin,
   asyncHandler(async (req, res) => {
     const query = listQuerySchema.parse(req.query);
-    const entries = await listAudit(req.params.key, query.environment, query.limit);
+    const entries = await listAudit(keyParam(req), query.environment, query.limit);
     res.json({ count: entries.length, entries });
   })
 );
@@ -161,7 +165,7 @@ router.post(
     const query = listQuerySchema.parse(req.query);
     const body = evaluateSchema.parse(req.body ?? {});
     const evaluation = await evaluateFlagForSubject(
-      req.params.key,
+      keyParam(req),
       subjectFor(req, body.subjectId),
       query.environment
     );
