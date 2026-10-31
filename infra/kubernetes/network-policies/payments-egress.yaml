@@ -1,4 +1,4 @@
-# payments-service egress: postgres (ledger), redis (BullMQ), rabbitmq (events).
+# payments-service egress: postgres (ledger), redis (BullMQ), rabbitmq (events), fraud (sync check).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -24,6 +24,16 @@ spec:
       ports:
         - protocol: TCP
           port: 5432
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nexuspay-prod
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: fraud-service
+      ports:
+        - protocol: TCP
+          port: 4005
     - to:
         - namespaceSelector:
             matchLabels:

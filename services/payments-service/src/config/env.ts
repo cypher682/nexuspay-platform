@@ -29,7 +29,10 @@ const envSchema = z.object({
   PAYMENT_PROCESSING_TTL_SECONDS: z.coerce.number().int().positive().default(30),
   PROVIDER_WEBHOOK_SECRET: z.string().min(16),
   PROVIDER_SUCCESS_RATE: z.coerce.number().min(0).max(1).default(0.9),
-  RECONCILIATION_TOLERANCE_MINOR: z.coerce.number().int().min(0).default(0)
+  RECONCILIATION_TOLERANCE_MINOR: z.coerce.number().int().min(0).default(0),
+  FRAUD_SERVICE_URL: z.string().url().default("http://localhost:4005"),
+  FRAUD_CHECK_TIMEOUT_MS: z.coerce.number().int().positive().max(10000).default(1500),
+  INTERNAL_API_KEY: z.string().min(16)
 });
 
 export const env =
@@ -37,6 +40,7 @@ export const env =
     ? envSchema.parse({
         ...process.env,
         JWT_SECRET: process.env.JWT_SECRET ?? "test-secret-value-at-least-32-chars",
-        PROVIDER_WEBHOOK_SECRET: process.env.PROVIDER_WEBHOOK_SECRET ?? "test-webhook-secret-value"
+        PROVIDER_WEBHOOK_SECRET: process.env.PROVIDER_WEBHOOK_SECRET ?? "test-webhook-secret-value",
+        INTERNAL_API_KEY: process.env.INTERNAL_API_KEY ?? "test-internal-api-key-value"
       })
     : envSchema.parse(process.env);

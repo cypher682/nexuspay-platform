@@ -7,6 +7,7 @@ import { prisma } from "../lib/prisma";
 import { env } from "../config/env";
 import { QUEUES } from "../queues/names";
 import { markFailed, markSucceeded, markProcessing } from "../services/payments.service";
+import { checkFraud } from "../lib/fraud";
 
 const PROVIDER_SUCCESS_RATE = env.PROVIDER_SUCCESS_RATE;
 
@@ -34,6 +35,34 @@ export async function processPaymentJob(job: Job<{ paymentId: string }>): Promis
 
   if (payment.status === "PENDING") {
     await markProcessing(payment.id);
+  }
+
+  const fraud = await checkFraud({
+    paymentId: payment.id,
+    userId: payment.userId,
+    amountMinor: payment.amountMinor,
+    currency: payment.currency,
+    email: payment.recipientEmail
+  });
+
+  if (fraud?.decision === "BLOCK") {
+    logger.warn("worker.payment_blocked_by_fraud", {
+      paymentId: payment.id,
+      checkId: fraud.id,
+      score: fraud.score,
+      reasons: fraud.reasons
+    });
+    await markFailed(payment.id, `fraud_blocked:${fraud.reasons.join(",") || "rule"}`);
+    return;
+  }
+
+  if (fraud?.decision === "REVIEW") {
+    logger.warn("worker.payment_flagged_for_review", {
+      paymentId: payment.id,
+      checkId: fraud.id,
+      score: fraud.score,
+      reasons: fraud.reasons
+    });
   }
 
   const decision = simulateProviderDecision();

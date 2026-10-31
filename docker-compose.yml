@@ -4,7 +4,7 @@ services:
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-nexuspay}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nexuspay}
-      POSTGRES_MULTIPLE_DATABASES: nexuspay_auth,nexuspay_payments,nexuspay_notifications,nexuspay_featureflags
+      POSTGRES_MULTIPLE_DATABASES: nexuspay_auth,nexuspay_payments,nexuspay_notifications,nexuspay_featureflags,nexuspay_fraud
     ports:
       - "5433:5432"
     volumes:
@@ -91,6 +91,7 @@ services:
       REDIS_URL: redis://redis:6379
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-nexuspay}:${RABBITMQ_PASSWORD:-nexuspay}@rabbitmq:5672
       OTEL_TRACES_ENDPOINT: http://jaeger:4318/v1/traces
+      FRAUD_SERVICE_URL: http://fraud-service:4005
     expose:
       - "4002"
     healthcheck:
@@ -105,6 +106,8 @@ services:
       redis:
         condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+      fraud-service:
         condition: service_healthy
 
   notifications-service:
@@ -147,6 +150,28 @@ services:
       start_period: 15s
     depends_on:
       postgres:
+        condition: service_healthy
+
+  fraud-service:
+    build: ./services/fraud-service
+    env_file: ./.env
+    environment:
+      PORT: 4005
+      DATABASE_URL: postgresql://${POSTGRES_USER:-nexuspay}:${POSTGRES_PASSWORD:-nexuspay}@postgres:5432/nexuspay_fraud?schema=public
+      REDIS_URL: redis://redis:6379
+      OTEL_TRACES_ENDPOINT: http://jaeger:4318/v1/traces
+    expose:
+      - "4005"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4005/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
   api-gateway:

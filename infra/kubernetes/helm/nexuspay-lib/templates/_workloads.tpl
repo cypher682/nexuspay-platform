@@ -92,6 +92,15 @@ spec:
       ports:
         - protocol: TCP
           port: {{ .Values.service.port }}
+    {{- else if eq .Values.networkPolicy.mode "payments-only" }}
+    - from:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: payments-service
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.port }}
     {{- else }}
     - ports:
         - protocol: TCP

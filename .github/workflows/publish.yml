@@ -44,7 +44,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [api-gateway, auth-service, payments-service, notifications-service, feature-flags-service]
+        service: [api-gateway, auth-service, payments-service, notifications-service, feature-flags-service, fraud-service]
     steps:
       - name: Checkout
         uses: actions/checkout@v4

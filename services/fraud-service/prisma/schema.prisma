@@ -1,0 +1,51 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum FraudRuleType {
+  AMOUNT_THRESHOLD
+  VELOCITY
+  DENYLIST
+}
+
+enum FraudDecision {
+  ALLOW
+  REVIEW
+  BLOCK
+}
+
+model FraudRule {
+  id        String        @id @default(cuid())
+  name      String        @unique
+  type      FraudRuleType
+  enabled   Boolean       @default(true)
+  score     Int           @default(50)
+  config    Json
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@map("fraud_rules")
+}
+
+model FraudCheck {
+  id          String        @id @default(cuid())
+  paymentId   String?
+  userId      String
+  email       String?
+  amountMinor Int
+  currency    String
+  decision    FraudDecision
+  score       Int
+  reasons     String[]
+  latencyMs   Int
+  createdAt   DateTime      @default(now())
+
+  @@index([userId, createdAt])
+  @@index([decision, createdAt])
+  @@map("fraud_checks")
+}
