@@ -38,6 +38,8 @@ tags:
     description: Payment creation, retrieval, capture, and refunds
   - name: Feature Flags
     description: Feature flag management, deterministic rollout evaluation and audit trail
+  - name: Fraud
+    description: Internal fraud checks, rules, decisions and stats (service-to-service, not gateway-routed)
   - name: Notifications
     description: Notification dispatch and retrieval
   - name: Webhooks
@@ -786,6 +788,130 @@ paths:
         "400":
           $ref: "#/components/responses/BadRequest"
 
+  # ── Fraud (internal) ───────────────────────────────────────────────
+  /v1/fraud/check:
+    post:
+      operationId: checkPaymentFraud
+      tags: [Fraud]
+      summary: Evaluate a payment against the fraud rules
+      description: |
+        **Internal only:** called by payments-service, not routed through the gateway.
+        Authenticated with the shared internal API key.
+      security:
+        - internalApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FraudCheckRequest"
+      responses:
+        "201":
+          description: Decision persisted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FraudCheck"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /v1/fraud/checks:
+    get:
+      operationId: listFraudChecks
+      tags: [Fraud]
+      summary: List recent fraud decisions
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: decision
+          in: query
+          schema:
+            type: string
+            enum: [ALLOW, REVIEW, BLOCK]
+      responses:
+        "200":
+          description: Fraud checks, newest first
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FraudCheckList"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /v1/fraud/stats:
+    get:
+      operationId: getFraudStats
+      tags: [Fraud]
+      summary: 24-hour fraud decision statistics
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Decision counts and average latency
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FraudStats"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /v1/fraud/rules:
+    get:
+      operationId: listFraudRules
+      tags: [Fraud]
+      summary: List configured fraud rules
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Fraud rules
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [count, rules]
+                properties:
+                  count:
+                    type: integer
+                  rules:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/FraudRule"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /v1/fraud/rules/{id}:
+    patch:
+      operationId: updateFraudRule
+      tags: [Fraud]
+      summary: Enable/disable a rule or change its score/config
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/FraudRuleId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FraudRulePatch"
+      responses:
+        "200":
+          description: Updated rule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FraudRule"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
   # ── Users (admin) ──────────────────────────────────────────────────
   /v1/users:
     get:
@@ -1444,6 +1570,14 @@ components:
         maxLength: 128
       description: Unique idempotency key to prevent duplicate payment creation
       example: idem_a1b2c3d4e5f6g7h8i9j0
+    FraudRuleId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Fraud rule id
+      example: rule_amount_threshold
     FeatureFlagKey:
       name: key
       in: path
@@ -1640,6 +1774,116 @@ components:
             - not_in_rollout
             - flag_not_found
 
+
+
+    # ── Fraud ───────────────────────────────────────────────────────
+    FraudCheckRequest:
+      type: object
+      required: [userId, amountMinor]
+      properties:
+        paymentId:
+          type: string
+          maxLength: 64
+        userId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        amountMinor:
+          type: integer
+          minimum: 1
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+          default: NGN
+        email:
+          type: string
+          format: email
+    FraudCheck:
+      type: object
+      required: [id, userId, decision, score, reasons, latencyMs, createdAt]
+      properties:
+        id:
+          type: string
+        paymentId:
+          type: string
+          nullable: true
+        userId:
+          type: string
+        decision:
+          type: string
+          enum: [ALLOW, REVIEW, BLOCK]
+        score:
+          type: integer
+          minimum: 0
+          maximum: 100
+        reasons:
+          type: array
+          items:
+            type: string
+        latencyMs:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+    FraudCheckList:
+      type: object
+      required: [count, checks]
+      properties:
+        count:
+          type: integer
+        checks:
+          type: array
+          items:
+            $ref: "#/components/schemas/FraudCheck"
+    FraudRule:
+      type: object
+      required: [id, name, type, enabled, score, config]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+          enum: [AMOUNT_THRESHOLD, VELOCITY, DENYLIST]
+        enabled:
+          type: boolean
+        score:
+          type: integer
+          minimum: 0
+          maximum: 100
+        config:
+          type: object
+          additionalProperties: true
+    FraudRulePatch:
+      type: object
+      minProperties: 1
+      properties:
+        enabled:
+          type: boolean
+        score:
+          type: integer
+          minimum: 0
+          maximum: 100
+        config:
+          type: object
+          additionalProperties: true
+    FraudStats:
+      type: object
+      required: [since, total, byDecision, averageLatencyMs]
+      properties:
+        since:
+          type: string
+          format: date-time
+        total:
+          type: integer
+        byDecision:
+          type: object
+          additionalProperties:
+            type: integer
+        averageLatencyMs:
+          type: integer
 
     # ── Health ──────────────────────────────────────────────────────
     HealthStatus:
