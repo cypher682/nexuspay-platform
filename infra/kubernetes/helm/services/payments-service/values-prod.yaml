@@ -1,6 +1,6 @@
 image:
   repository: ghcr.io/cypher682/nexuspay-payments-service
-  digest: sha256:11913cff97eb93b7564d12b457d0fa84b4bb09bc4d8cf3c852aa7dad5db88f49
+  digest: sha256:dc6f2cc76d1d914218efa7344a1db65ff3dd8fff3f8070512c263b36ea02062b
   pullPolicy: IfNotPresent
 
 replicaCount: 3

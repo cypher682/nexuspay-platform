@@ -1,0 +1,74 @@
+fullnameOverride: fraud-service
+
+replicaCount: 2
+terminationGracePeriodSeconds: 20
+
+image:
+  repository: nexuspay/fraud-service
+  tag: "1.0.0"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 4005
+
+env:
+  - name: LOG_LEVEL
+    value: info
+  - name: REDIS_URL
+    value: redis://redis-master.nexuspay-data.svc.cluster.local:6379
+  - name: DATABASE_URL
+    valueFrom:
+      secretKeyRef:
+        name: fraud-db
+        key: url
+  - name: JWT_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: nexuspay-shared
+        key: jwt-secret
+        optional: false
+  - name: OLD_JWT_SECRETS
+    valueFrom:
+      secretKeyRef:
+        name: nexuspay-shared
+        key: old-jwt-secrets
+        optional: true
+  - name: INTERNAL_API_KEY
+    valueFrom:
+      secretKeyRef:
+        name: nexuspay-shared
+        key: internal-api-key
+        optional: false
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 300m
+    memory: 256Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 4
+  targetCPUUtilizationPercentage: 75
+
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 1
+
+networkPolicy:
+  enabled: true
+  mode: payments-only
+
+serviceMonitor:
+  enabled: true
+  interval: 30s
+
+migrations:
+  enabled: true
+  command: ["npx", "--no-install", "prisma", "migrate", "deploy"]
+  databaseSecret: fraud-db
+  databaseSecretKey: url

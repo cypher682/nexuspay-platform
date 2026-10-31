@@ -1,0 +1,14 @@
+image:
+  repository: ghcr.io/cypher682/nexuspay-fraud-service
+  digest: sha256:af20a61077ab0d2c713ded6cb3002d3210d6ad02d28964c7b25a7419aa3b7486
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+
+resources:
+  requests:
+    cpu: 75m
+    memory: 160Mi
+  limits:
+    cpu: 500m
+    memory: 384Mi
