@@ -121,7 +121,7 @@ const app = createApp();
 const JWT_SECRET = "test-secret-value-at-least-32-chars";
 
 function token(scopes: string[]): string {
-  return jwt.sign({ sub: "user-1", type: "access", scopes }, JWT_SECRET);
+  return jwt.sign({ sub: "user-1", type: "access", scopes, iss: "NexusPay" }, JWT_SECRET);
 }
 
 function auth(scopes: string[]) {
