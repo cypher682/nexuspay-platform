@@ -53,7 +53,7 @@ Running on a **single-node k3s cluster** (Oracle Cloud ARM) and deployed entirel
 - **Ingress + TLS:** Traefik + cert-manager (Let's Encrypt, HTTP-01)
 - **CD:** ArgoCD `ApplicationSet` watching `helm/services/*` on `main` (prod overlay)
 - **Images:** `linux/arm64` builds published to GHCR by `.github/workflows/publish.yml` after green CI
-- **Data:** PostgreSQL (4 logical databases), Redis, RabbitMQ, Mailpit in `nexuspay-data`
+- **Data:** PostgreSQL (5 logical databases), Redis, RabbitMQ, Mailpit in `nexuspay-data`
 - **Migrations:** Helm `pre-install,pre-upgrade` hook → ArgoCD PreSync (`prisma migrate deploy`)
 
 Full runbook, verification output, rollback and limitations:
@@ -68,6 +68,7 @@ Full runbook, verification output, rollback and limitations:
 | **Identity & IAM** (`auth-service`) | Register/login, refresh-token rotation with **family reuse detection**, TOTP MFA, **RBAC permission scopes** embedded in JWTs, brute-force lockout, audit trail, email + password-reset verification |
 | **Payments** (`payments-service`) | **Idempotent** payment creation (Postgres + Redis locks), a strict **state machine**, **double-entry ledger** (balanced through refunds), HMAC-verified **provider webhooks**, scheduled **reconciliation** |
 | **Async Notifications** (`notifications-service`) | Event-driven via **RabbitMQ** topic exchange; templated email/SMS with delivery tracking and **dead-letter** handling for poison messages |
+| **Fraud Detection** (`fraud-service`) | Synchronous risk gate before the provider charge: configurable **amount / velocity / denylist rules**, score thresholds, persisted decisions with reasons and latency; fail-open on timeout |
 | **Feature Flags** (`feature-flags-service`) | Kill switches, **deterministic percentage rollouts**, allowlists and A/B variants; audited CRUD behind the gateway, evaluated per subject |
 | **API Gateway** (`gateway`) | **JWT** validation, Redis sliding-window **rate limiting**, downstream **circuit breaker**, correlated request IDs, forwarded identity (headers scrubbed, set explicitly) |
 | **CI/CD** | Changed-service matrix detection, lint + typecheck, Jest unit tests, Docker **build + push to GHCR** with OCI cache, **Trivy** CVE scanning, `npm audit`, **OpenAPI drift validation + Spectral**, and a **k6 smoke test** against the full stack |
@@ -102,6 +103,7 @@ Full runbook, verification output, rollback and limitations:
    (PostgreSQL)               (PostgreSQL)                 (PostgreSQL)
 
    api-gateway --> feature-flags-service :4004 --> nexuspay_featureflags (PostgreSQL)
+   payments-service --> fraud-service :4005 --> nexuspay_fraud (PostgreSQL)
 ```
 
 - **Single entrypoint** - all traffic enters through the gateway (the only port published to
@@ -110,7 +112,7 @@ Full runbook, verification output, rollback and limitations:
   RabbitMQ **topic exchange**; notifications-service consumes them and enqueues templated
   receipt/status emails, routing unprocessable messages to a **dead-letter queue**.
 - **Separate data stores** - each service owns its Postgres database (`nexuspay_auth`,
-  `nexuspay_payments`, `nexuspay_notifications`, `nexuspay_featureflags`) behind Prisma;
+  `nexuspay_payments`, `nexuspay_notifications`, `nexuspay_featureflags`, `nexuspay_fraud`) behind Prisma;
   cache/shared state in Redis.
 
 > Monetary amounts are stored as **integer minor units** (kobo/cents) - **no floats anywhere**.
@@ -126,6 +128,7 @@ Full runbook, verification output, rollback and limitations:
 | `payments-service` | 4002 | Idempotent payment processing, double-entry ledger, state machine, HMAC-verified provider webhooks, reconciliation |
 | `notifications-service` | 4003 | Multi-channel delivery (email/SMS), template engine, RabbitMQ consumer, delivery tracking |
 | `feature-flags-service` | 4004 | Flag CRUD + audit, deterministic rollout/allowlist/variant evaluation, batch evaluation API |
+| `fraud-service` | 4005 | Synchronous fraud gate: amount/velocity/denylist rules, risk score, persisted decisions and stats |
 
 Every service: **TypeScript, Express 5, Prisma ORM, Zod validation, Winston structured logs,
 Jest tests, multi-stage Docker builds, health/readiness probes, non-root runtime user,
@@ -143,7 +146,7 @@ cd nexuspay-platform
 
 cp .env.example .env
 
-# Build & start the full stack (postgres, redis, rabbitmq, 5 services + observability)
+# Build & start the full stack (postgres, redis, rabbitmq, 6 services + observability)
 docker compose up -d --build
 
 # Apply database migrations for all services
@@ -196,8 +199,8 @@ RED metrics show up in Grafana.
   ArgoCD `AppProject` + `ApplicationSet` (matrix generator over services x environments),
   Gatekeeper admission policies (allowed registries, required resources), secrets bootstrap
   script. See [`infra/kubernetes/`](infra/kubernetes/).
-- **Observability** - **kube-prometheus-stack live on k3s**: four ServiceMonitors scraping
-  Prometheus **RED** metrics (`/metrics`), 11/11 targets up, 30 Grafana dashboards (including a
+- **Observability** - **kube-prometheus-stack live on k3s**: six ServiceMonitors scraping
+  Prometheus **RED** metrics (`/metrics`), 15/15 prod pods up, 30 Grafana dashboards (including a
   NexusPay RED board delivered as a GitOps ConfigMap), and SLO/SLI recording rules (99.5%
   availability, p99 <2s) with a **burn-rate alert** pipeline: Prometheus -> **Alertmanager** ->
   emails in **Mailpit**, verified end-to-end. OpenTelemetry tracing SDK is wired into every
@@ -230,7 +233,8 @@ nexuspay-platform/
 |   |-- auth-service/         # :4001  IAM, MFA, RBAC, audit, lockout
 |   |-- payments-service/     # :4002  idempotent payments, double-entry ledger, webhooks
 |   |-- notifications-service/# :4003  email/SMS via RabbitMQ
-|   `-- feature-flags-service/# :4004  flags, rollouts, variants, audit log
+|   |-- feature-flags-service/# :4004  flags, rollouts, variants, audit log
+|   `-- fraud-service/      # :4005  rules, velocity, risk score, decision trail
 |-- infra/
 |   |-- kubernetes/           # helm/, argocd/, policies/, data/, scripts/
 |   `-- monitoring/           # prometheus/, grafana/, loki/, jaeger (compose)
@@ -238,7 +242,7 @@ nexuspay-platform/
 |-- scripts/                  # openapi drift validation, test-user seed
 |-- docs/                     # architecture, minikube guide, roadmap, load findings
 |-- .github/workflows/ci.yml
-`-- docker-compose.yml        # local stack: postgres + redis + rabbitmq + 5 services + obs
+`-- docker-compose.yml        # local stack: postgres + redis + rabbitmq + 6 services + obs
 ```
 
 ---
@@ -252,6 +256,7 @@ nexuspay-platform/
 | [`docs/minikube-deployment-guide.md`](docs/minikube-deployment-guide.md) | Full minikube/GitOps deployment walkthrough |
 | [`docs/k6-load-testing.md`](docs/k6-load-testing.md) | Load tests, thresholds, findings |
 | [`docs/feature-flags.md`](docs/feature-flags.md) | Flag model, evaluation algorithm, API, ops runbook |
+| [`docs/fraud-service.md`](docs/fraud-service.md) | Rules engine, scoring, payment gate, ops runbook |
 | [`docs/lab-roadmap.md`](docs/lab-roadmap.md) | 6-phase roadmap (all local, $0) |
 
 ---

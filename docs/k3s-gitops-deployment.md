@@ -16,6 +16,7 @@ api-gateway (3)  --->  auth-service (3)  --->  postgres-postgresql (nexuspay_aut
    |                   payments-service (3) -->  postgres-postgresql (nexuspay_payments)
    |                   notifications-service -->  postgres-postgresql (nexuspay_notifications)
    |                   feature-flags-service -->  postgres-postgresql (nexuspay_featureflags)
+   |                   fraud-service ---------->  postgres-postgresql (nexuspay_fraud)
    |                                              redis-master
    |                                              rabbitmq (events)
    |                                              mailpit (SMTP, UI :8025)
@@ -189,7 +190,7 @@ run), Alertmanager routed to Mailpit (`mailpit.nexuspay-data:1025`), and
 Prometheus/Grafana/Alertmanager kept ClusterIP-only — no new public surface and
 Traefik is untouched.
 
-The five `ServiceMonitor`s are rendered by the Helm library chart
+The six `ServiceMonitor`s are rendered by the Helm library chart
 (`serviceMonitor.enabled: true`). The SLO `PrometheusRule` and the NexusPay RED
 dashboard are delivered as ArgoCD apps (`nexuspay-platform-alerts`,
 `nexuspay-platform-dashboards`). `allow-metrics-ingress` is the only
@@ -233,10 +234,20 @@ NetworkPolicy was being fixed.
 `feature-flags-service` is deployed the same way as the other services: chart under
 `infra/kubernetes/helm/services/`, arm64 digest pinned in `values-prod.yaml`, PreSync
 migration Job against `nexuspay_featureflags`, ingress only from the gateway, egress only to
-postgres. Verified: app `Synced/Healthy`, 2/2 pods Ready, 13/13 prod pods `up=1`,
+postgres. Verified: app `Synced/Healthy`, 2/2 pods Ready, 15/15 prod pods `up=1`,
 `feature_flag_evaluations_total` incrementing, and the full CRUD → evaluate → audit path
 through `https://nexuspay.141-148-69-94.sslip.io/v1/flags` with an admin token. Design,
 API and runbook: [feature-flags.md](feature-flags.md).
+
+### Fraud checks (added 2026-10-31)
+
+`fraud-service` is internal-only: the payments worker calls it synchronously over the cluster
+network with the shared internal API key, and Prometheus scrapes it like any other service.
+Egress is limited to Postgres and Redis; ingress only from `payments-service` (plus the metrics
+exception). Verified end-to-end: an allowed payment produced `ALLOW` (score 0), a denylisted
+user produced `FAILED / fraud_blocked:denylist` with `BLOCK` (score 100), and an amount above
+the threshold produced `REVIEW` (score 60) while still completing. Runbook:
+[fraud-service.md](fraud-service.md).
 
 Access (never public):
 

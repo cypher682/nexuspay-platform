@@ -37,13 +37,13 @@ Everything below the application code lives in **infra/** and is declarative
 
 ```
 .
-├── services/                 # 5 microservices (gateway, auth, payments, notifications, feature flags)
+├── services/                 # 6 microservices (gateway, auth, payments, notifications, feature flags, fraud)
 ├── k6/                       # load + smoke tests (performance gate)
 ├── docs/                     # architecture, runbooks, security, roadmap
 ├── infra/
 │   ├── monitoring/           # prometheus rules, alertmanager, loki/grafana config
 │   └── kubernetes/
-│       ├── helm/             # library chart + 5 service charts (dev/prod values)
+│       ├── helm/             # library chart + 6 service charts (dev/prod values)
 │       ├── argocd/           # AppProject + ApplicationSet (matrix)
 │       ├── policies/         # Gatekeeper admission policies
 │       ├── network-policies/ # deny-all + explicit flows
@@ -53,7 +53,7 @@ Everything below the application code lives in **infra/** and is declarative
 │       └── scripts/          # bootstrap-secrets.sh
 ├── scripts/                  # vault-seed.sh, rotate-jwt-keys.sh, openapi helpers
 ├── .github/workflows/ci.yml  # the entire pipeline
-└── docker-compose.yml        # local dev stack (15 services incl. vault)
+└── docker-compose.yml        # local dev stack (16 services incl. vault)
 ```
 
 **The big-company habit:** infrastructure is *code in the same repo* as the app
@@ -120,15 +120,15 @@ Live on k3s as **kube-prometheus-stack** (Helm add-on): **Prometheus**
 (alerting → Mailpit SMTP) + kube-state-metrics + node-exporter. Values live in
 `infra/kubernetes/monitoring/kube-prometheus-stack-values.yaml`.
 
-The **OTel SDK is wired into all five services** but `OTEL_TRACES_ENABLED` is
+The **OTel SDK is wired into all six services** but `OTEL_TRACES_ENABLED` is
 false and no Jaeger backend exists on the cluster; Loki likewise has only a
 config file (`infra/monitoring/loki/`). Compose-era Prometheus/Alertmanager
 configs remain under `infra/monitoring/` for local runs.
 
 ### RED metrics per service
 Each service exposes `/metrics` via prom-client and the Helm library chart
-renders a `ServiceMonitor` when `serviceMonitor.enabled: true` (all four are
-enabled). Prometheus scrapes all 11 prod pods directly; the
+renders a `ServiceMonitor` when `serviceMonitor.enabled: true` (all six are
+enabled). Prometheus scrapes all 15 prod pods directly; the
 `allow-metrics-ingress` NetworkPolicy is the only path in. The signal set is **RED**:
 - **R**ate – requests/sec
 - **E**rrors – error rate (5xx / total)
@@ -319,8 +319,8 @@ them perfect for incremental articles.
 
 ### Done (verifiable)
 - Phase 1 CI/CD: lint, test, build, Trivy, npm audit, openapi, k6 ✅ (all green)
-- Phase 2 Observability: kube-prometheus-stack on k3s — 4 ServiceMonitors,
-  11/11 targets up, Grafana with 30 dashboards (incl. NexusPay RED), 5 SLO
+- Phase 2 Observability: kube-prometheus-stack on k3s — 6 ServiceMonitors,
+  15/15 targets up, Grafana with 30 dashboards (incl. NexusPay RED), 5 SLO
   recording rules + 6 alerting rules, Alertmanager → Mailpit verified ✅.
   Tracing SDK wired but disabled; Loki/Jaeger backends not deployed.
 - Phase 3 Security: NetworkPolicies + PSA + Gatekeeper constraints **enforced on
@@ -374,7 +374,7 @@ portfolio together.
 ## 9. One-paragraph pitch for interviews / LinkedIn
 
 > NexusPay is a microservice fintech platform I designed and built end-to-end:
-> five services, a CI/CD pipeline that lints, tests, scans (Trivy/npm audit),
+> six services, a CI/CD pipeline that lints, tests, scans (Trivy/npm audit),
 > and smoke-tests every change; a full observability stack with
 > RED metrics, SLOs, burn-rate alerts, distributed tracing, and log aggregation;
 > and a defense-in-depth security posture including default-deny network
