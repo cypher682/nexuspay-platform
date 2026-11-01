@@ -13,12 +13,13 @@ Policy file: `infra/kubernetes/network-policies/`
 | `deny-all.yaml` | Deny all ingress+egress in `nexuspay-dev`, `nexuspay-prod`, `nexuspay-data` (the baseline) |
 | `allow-gateway-ingress.yaml` | Gateway accepts from outside the cluster (`ingress`) and anywhere inside |
 | `allow-dns-egress.yaml` | All pods can reach kube-dns/core-dns egress :53 |
-| `api-gateway-egress.yaml` | Gateway → auth/payments/notifications/feature-flags :4001-:4004 |
+| `api-gateway-egress.yaml` | Gateway → auth/payments/notifications/feature-flags :4001-:4004 and reporting :4006 |
 | `auth-egress.yaml` | Auth → postgres :5432, rabbitmq :5672 (verification/reset events) |
 | `payments-egress.yaml` | Payments → postgres :5432, redis :6379, rabbitmq :5672, fraud :4005 |
 | `notifications-egress.yaml` | Notifications → postgres :5432, rabbitmq :5672, mailpit :1025 |
 | `feature-flags-egress.yaml` | Feature flags → postgres :5432 only |
 | `fraud-egress.yaml` | Fraud → postgres :5432, redis :6379 only |
+| `reporting-egress.yaml` | Reporting → postgres :5432 only (snapshots DB + read-only payments queries) |
 | `data-ingress.yaml` | Postgres/redis/rabbitmq/mailpit accept only the correct app pods |
 
 `deny-all` is applied **after** the app-scoped Helm NetworkPolicies already
@@ -52,9 +53,9 @@ additive, so the union is what applies. The files are reconciled by the
 
 Observability exception (added 2026-10-30): Prometheus lives in the
 `monitoring` namespace and scrapes the app pods directly, which deny-all would
-otherwise block. `allow-metrics-ingress` opens TCP 4000-4005 to pods labelled
+otherwise block. `allow-metrics-ingress` opens TCP 4000-4006 to pods labelled
 `app.kubernetes.io/name` in {api-gateway, auth-service, payments-service,
-notifications-service, feature-flags-service, fraud-service} from `monitoring` only. Mailpit's ingress now also
+notifications-service, feature-flags-service, fraud-service, reporting-service} from `monitoring` only. Mailpit's ingress now also
 accepts SMTP from `monitoring` so Alertmanager can deliver. No other inbound
 path into the app namespaces was added.
 
@@ -140,7 +141,7 @@ Templates and constraints live in `infra/kubernetes/policies/` and are scoped to
 | `K8sAllowedRepos` | `nexuspay-prod-approved-registries` | image outside `ghcr.io/cypher682/nexuspay-*` |
 | `K8sRequiredResources` | `nexuspay-prod-needs-limits` | container without requests **and** limits |
 
-All six service images are pinned by digest in `values-prod.yaml`;
+All seven service images are pinned by digest in `values-prod.yaml`;
 `_deployment.tpl` and `_migration.tpl` render `repo@digest` when `image.digest`
 is set, so the PreSync migration Job obeys the same policy.
 

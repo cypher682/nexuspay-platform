@@ -17,6 +17,8 @@ api-gateway (3)  --->  auth-service (3)  --->  postgres-postgresql (nexuspay_aut
    |                   notifications-service -->  postgres-postgresql (nexuspay_notifications)
    |                   feature-flags-service -->  postgres-postgresql (nexuspay_featureflags)
    |                   fraud-service ---------->  postgres-postgresql (nexuspay_fraud)
+   |                   reporting-service ------>  postgres-postgresql (nexuspay_reporting)
+   |                   reporting-service -. reads .-> nexuspay_payments
    |                                              redis-master
    |                                              rabbitmq (events)
    |                                              mailpit (SMTP, UI :8025)
@@ -190,27 +192,31 @@ run), Alertmanager routed to Mailpit (`mailpit.nexuspay-data:1025`), and
 Prometheus/Grafana/Alertmanager kept ClusterIP-only — no new public surface and
 Traefik is untouched.
 
-The six `ServiceMonitor`s are rendered by the Helm library chart
+The seven `ServiceMonitor`s are rendered by the Helm library chart
 (`serviceMonitor.enabled: true`). The SLO `PrometheusRule` and the NexusPay RED
 dashboard are delivered as ArgoCD apps (`nexuspay-platform-alerts`,
 `nexuspay-platform-dashboards`). `allow-metrics-ingress` is the only
 NetworkPolicy exception that lets the `monitoring` namespace scrape the app
 pods, and Mailpit's ingress allows SMTP from `monitoring` for Alertmanager.
 
-Verified 2026-10-30:
+Verified 2026-11-01 (the block started 2026-10-30 with four services):
 
 ```console
 $ kubectl -n nexuspay-prod get servicemonitor
 NAME                    AGE
-api-gateway             2m
-auth-service            2m
-notifications-service   2m
-payments-service        2m
+api-gateway             ...
+auth-service            ...
+feature-flags-service   ...
+fraud-service           ...
+notifications-service   ...
+payments-service        ...
+reporting-service       ...
 
-# Prometheus: all 11 prod pods up=1
-# 3 api-gateway, 3 auth-service, 3 payments-service, 2 notifications-service
+# Prometheus: all 17 prod pods up=1
+# 3 api-gateway, 3 auth-service, 3 payments-service, 2 notifications-service,
+# 2 feature-flags-service, 2 fraud-service, 2 reporting-service
 # rule groups: nexuspay-sli-recording-rules (5) + nexuspay-alerting-rules (6)
-# p99 recording series: api-gateway=0.00495s, others ~0.02s (4 services)
+# p99 recording series present for all 7 services
 
 $ kubectl -n monitoring get pods
 NAME                                                          READY   STATUS
@@ -234,7 +240,7 @@ NetworkPolicy was being fixed.
 `feature-flags-service` is deployed the same way as the other services: chart under
 `infra/kubernetes/helm/services/`, arm64 digest pinned in `values-prod.yaml`, PreSync
 migration Job against `nexuspay_featureflags`, ingress only from the gateway, egress only to
-postgres. Verified: app `Synced/Healthy`, 2/2 pods Ready, 15/15 prod pods `up=1`,
+postgres. Verified: app `Synced/Healthy`, 2/2 pods Ready, 17/17 prod pods `up=1`,
 `feature_flag_evaluations_total` incrementing, and the full CRUD → evaluate → audit path
 through `https://nexuspay.141-148-69-94.sslip.io/v1/flags` with an admin token. Design,
 API and runbook: [feature-flags.md](feature-flags.md).
@@ -248,6 +254,17 @@ exception). Verified end-to-end: an allowed payment produced `ALLOW` (score 0), 
 user produced `FAILED / fraud_blocked:denylist` with `BLOCK` (score 100), and an amount above
 the threshold produced `REVIEW` (score 60) while still completing. Runbook:
 [fraud-service.md](fraud-service.md).
+
+### Reporting (added 2026-11-01)
+
+`reporting-service` is gateway-routed at `/v1/reports/*` and pins its own arm64 digest. It
+migrates `nexuspay_reporting`, reads `nexuspay_payments` through a second time-bounded pool,
+and runs a daily `reporting-service-snapshot` CronJob (02:15 UTC). Verified: app
+`Synced/Healthy`, 2/2 pods Ready, 17/17 prod pods `up=1`, a 7-day refresh wrote 3 rows with
+`SUCCEEDED` in `report_runs`, CSV export through the public gateway returned the three
+NGN days, an inverted range returned 422, and a manual CronJob run logged
+`service="reporting-service"` with `rowsWritten=3`. Design and runbook:
+[reporting-service.md](reporting-service.md).
 
 Access (never public):
 

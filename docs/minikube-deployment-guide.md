@@ -5,7 +5,7 @@
 > **Project path:** `C:\Users\Suleiman\Desktop\Clouddevops-portfolio\F1\nexuspay-platform`  
 > **Date:** August 2026
 
-This guide walks you through deploying the complete NexusPay platform locally using Minikube. By the end you will have all six services, the database layer, cache, message broker, and ingress running inside a single Kubernetes cluster.
+This guide walks you through deploying the complete NexusPay platform locally using Minikube. By the end you will have all seven services, the database layer, cache, message broker, and ingress running inside a single Kubernetes cluster.
 
 ---
 

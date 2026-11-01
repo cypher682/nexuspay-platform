@@ -6,7 +6,7 @@
 
 ## What Exists Now
 
-### Core Platform (6 services + infrastructure)
+### Core Platform (7 services + infrastructure)
 
 | Service | Status | Endpoints | What it does |
 |---------|--------|-----------|-------------|
@@ -16,19 +16,20 @@
 | notifications-service :4003 | ✅ Done | 6 endpoints | Email/SMS via RabbitMQ, templates, delivery attempts, retries |
 | feature-flags-service :4004 | ✅ Live on k3s | 8 endpoints | Flag CRUD + audit, deterministic rollout/allowlist/variant evaluation, batch evaluate |
 | fraud-service :4005 | ✅ Live on k3s | 5 endpoints | Amount/velocity/denylist rules, risk scoring, payment gate, persisted decisions |
+| reporting-service :4006 | ✅ Live on k3s | 4 endpoints | UTC daily payment snapshots, range refresh, runs history, CSV export, nightly CronJob |
 
 ### Infrastructure (scaffolded, not tested on minikube yet)
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| Docker Compose | 🟡 Partial | 16 services defined; the 10-container app stack was verified before fraud existed, the fraud block has not been run locally |
+| Docker Compose | 🟡 Partial | 17 services defined; the 10-container app stack was verified before fraud and reporting existed, those blocks have not been run locally |
 | Dockerfiles | ✅ Optimized | Multi-stage, non-root, healthchecks, cache mounts |
-| Helm charts | ✅ Built | Library chart + 6 service charts with dev/prod values |
+| Helm charts | ✅ Built | Library chart + 7 service charts with dev/prod values |
 | ArgoCD | ✅ Built | AppProject + ApplicationSet (matrix: services × environments) |
 | Gatekeeper policies | ✅ Built | Allowed repos + required resources (prod only) |
 | Network policies | ✅ Built | Gateway-only mode for internal services |
 | Bootstrap secrets | ✅ Built | Idempotent shell script |
-| OpenAPI spec | ✅ Done | 3.1 spec, 46 documented routes, Swagger UI at /docs/ |
+| OpenAPI spec | ✅ Done | 3.1 spec, 50 documented routes, Swagger UI at /docs/ |
 | Minikube guide | ✅ Done | 16-section guide with image loading, Helm deploy, smoke tests |
 | Observability stack | ✅ Live on k3s | kube-prometheus-stack: Prometheus, Grafana, Alertmanager, kube-state-metrics, node-exporter; OTel SDK wired but tracing disabled, no Jaeger/Loki backend |
 | SLO/Alerting | ✅ Live on k3s | 5 SLI recording rules + 6 alerting rules reconciled by ArgoCD; Alertmanager -> Mailpit verified |
@@ -95,17 +96,17 @@ Scaffolded, not running on k3s yet:
 
 | # | What | Tool | Effort | Why it is not done | Status |
 |---|------|------|--------|--------------------|--------|
-| 2.3 | Distributed tracing | OpenTelemetry SDK | 1 day | SDK initialised in all 6 services behind `OTEL_TRACES_ENABLED`, disabled until a backend exists | 🟡 |
+| 2.3 | Distributed tracing | OpenTelemetry SDK | 1 day | SDK initialised in all 7 services behind `OTEL_TRACES_ENABLED`, disabled until a backend exists | 🟡 |
 | 2.4 | Jaeger backend | Jaeger Helm | 2 hours | No trace backend deployed anywhere yet | ❌ |
 | 2.5 | Structured logging | Winston + JSON | 2 hours | Services emit JSON logs; no aggregation on k3s | 🟡 |
 | 2.6 | Loki log aggregation | Fluent Bit + Loki Helm | 4 hours | `infra/monitoring/loki/loki-config.yaml` exists, nothing deployed | 🟡 |
 
 **Deliverables (verified on k3s):**
-- Prometheus scrapes all six services through ServiceMonitors rendered by the Helm library chart — 15/15 pods `up=1`
+- Prometheus scrapes all seven services through ServiceMonitors rendered by the Helm library chart — 17/17 pods `up=1`
 - Grafana with 29 stock dashboards plus `NexusPay - RED metrics` (request rate, 5xx ratio, p99, targets up), Prometheus + Alertmanager datasources auto-provisioned; ClusterIP only, reached with `kubectl port-forward`
 - Alertmanager routes to Mailpit (`mailpit.nexuspay-data:1025`); an injected `NexusPaySmokeTest` alert was delivered and a real `NexusPayTargetDown` fired and resolved during the metrics-NetworkPolicy fix
 - Alert rules for: error rate >1%, p99 latency >2s, queue depth >100, SLO burn rate (6x/14.4x), target down
-- SLO recording rules: 99.5% availability, p99 latency SLI, burn rate (5m/1h windows) — 5 rules loaded, p99 series present for all 6 services
+- SLO recording rules: 99.5% availability, p99 latency SLI, burn rate (5m/1h windows) — 5 rules loaded, p99 series present for all 7 services
 - `allow-metrics-ingress` NetworkPolicy is the only scrape path; the monitoring namespace is otherwise outside the app policy set
 
 **Files:**
@@ -236,19 +237,26 @@ assignment, allowlists and batch evaluation. Design and runbook: [feature-flags.
 
 ### 4C. Reporting Service
 
-| # | What | Tool | Effort |
+**Status: shipped and verified live on k3s (2026-11-01).** Deviations: no PostgreSQL
+materialized views — the service keeps its own `daily_payment_snapshots` table refreshed by
+idempotent upserts (portable, and no refresh dependency inside the payments DB); the Grafana
+revenue panel was not built (the RED dashboard and the JSON/CSV API cover the need for now);
+reports are computed in the service, not by the database. Design and runbook:
+[reporting-service.md](reporting-service.md).
+
+| # | What | Tool | Status |
 |---|------|------|--------|
-| 4C.1 | New service scaffold | Express + Prisma | 4 hours |
-| 4C.2 | Materialized views | PostgreSQL | 4 hours |
-| 4C.3 | Scheduled reports | CronJob (K8s) | 4 hours |
-| 4C.4 | Revenue dashboard | Grafana panel | 4 hours |
-| 4C.5 | Export endpoints | CSV/JSON | 4 hours |
+| 4C.1 | New service scaffold | Express + Prisma | ✅ Done |
+| 4C.2 | Snapshot tables (was: materialized views) | Postgres + Prisma upserts | ✅ Done |
+| 4C.3 | Scheduled refresh | Kubernetes CronJob, daily 02:15 UTC | ✅ Done |
+| 4C.4 | Revenue dashboard | Grafana panel | ❌ Deferred |
+| 4C.5 | Export endpoints | JSON + CSV via gateway | ✅ Done |
 
 **Deliverables:**
-- 3 new services (fraud, flags, reporting) — fraud and flags shipped on k3s; reporting not started
+- 3 new services (fraud, flags, reporting) — all three shipped on k3s and verified live
 - Fraud checks visible in decision records and metrics
 - Feature flags toggling behavior live ✅
-- Revenue dashboard in Grafana
+- Revenue dashboard in Grafana — deferred; snapshots are exposed as JSON/CSV and refresh metrics feed the RED board
 
 ---
 
@@ -348,6 +356,7 @@ docker compose up --build
 | Notifications Service | http://localhost:4003 |
 | Feature Flags Service | http://localhost:4004 |
 | Fraud Service (internal) | http://localhost:4005 |
+| Reporting Service | http://localhost:4006 |
 | RabbitMQ UI | http://localhost:15672 |
 
 ### After Phase 2 (observability)

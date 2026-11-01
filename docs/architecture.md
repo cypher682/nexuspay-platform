@@ -16,6 +16,7 @@ flowchart TB
         NOTIF[notifications-service :4003]
         FF[feature-flags-service :4004]
         FRAUD[fraud-service :4005]
+        REP[reporting-service :4006]
     end
 
     subgraph Datastores
@@ -24,6 +25,7 @@ flowchart TB
         PG3[(nexuspay_notifications)]
         PG4[(nexuspay_featureflags)]
         PG5[(nexuspay_fraud)]
+        PG6[(nexuspay_reporting)]
         RD[Redis 7]
         MQ[RabbitMQ 3.13]
     end
@@ -33,6 +35,7 @@ flowchart TB
     GW -->|/v1/payments/* Bearer JWT| PAY
     GW -->|/v1/notifications/* + internal key| NOTIF
     GW -->|/v1/flags/*| FF
+    GW -->|/v1/reports/*| REP
     PAY -->|sync check| FRAUD
     GW -.->|rate limits| RD
     GW -.->|health aggregation| AUTH & PAY
@@ -45,6 +48,8 @@ flowchart TB
     NOTIF --- PG3
     FF --- PG4
     FRAUD --- PG5
+    REP --- PG6
+    REP -.->|read-only aggregates| PG2
     NOTIF -.->|notifications.send queue| MQ
 ```
 
