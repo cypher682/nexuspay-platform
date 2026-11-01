@@ -13,7 +13,7 @@ const traceContext = winston.format((info) => {
 
 export const logger = winston.createLogger({
   level: env.LOG_LEVEL,
-  defaultMeta: { service: "feature-flags-service" },
+  defaultMeta: { service: "reporting-service" },
   format: winston.format.combine(
     winston.format.timestamp(),
     winston.format.errors({ stack: true }),

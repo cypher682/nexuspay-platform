@@ -4,7 +4,7 @@ import { prisma } from "../../lib/prisma";
 const router = Router();
 
 router.get("/", (_req, res) => {
-  res.json({ status: "ok", service: "feature-flags-service", version: "1.0.0" });
+  res.json({ status: "ok", service: "reporting-service", version: "1.0.0" });
 });
 
 router.get("/live", (_req, res) => {
