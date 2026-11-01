@@ -48,6 +48,12 @@ spec:
           podSelector:
             matchLabels:
               app.kubernetes.io/name: fraud-service
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nexuspay-prod
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: reporting-service
       ports:
         - protocol: TCP
           port: 5432

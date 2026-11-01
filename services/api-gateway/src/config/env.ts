@@ -30,6 +30,7 @@ const envSchema = z.object({
   PAYMENTS_SERVICE_URL: z.string().url().default("http://localhost:4002"),
   NOTIFICATIONS_SERVICE_URL: z.string().url().default("http://localhost:4003"),
   FEATURE_FLAGS_SERVICE_URL: z.string().url().default("http://localhost:4004"),
+  REPORTING_SERVICE_URL: z.string().url().default("http://localhost:4006"),
   DOWNSTREAM_TIMEOUT_MS: z.coerce.number().int().positive().default(2000),
   CIRCUIT_BREAKER_FAILURE_THRESHOLD: z.coerce.number().int().positive().default(5),
   CIRCUIT_BREAKER_OPEN_SECONDS: z.coerce.number().int().positive().default(15)

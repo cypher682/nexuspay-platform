@@ -1,0 +1,38 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model DailyPaymentSnapshot {
+  id                  String   @id @default(cuid())
+  day                 DateTime @db.Date
+  currency            String
+  succeededCount      Int      @default(0)
+  failedCount         Int      @default(0)
+  refundedCount       Int      @default(0)
+  grossVolumeMinor    BigInt   @default(0)
+  refundedVolumeMinor BigInt   @default(0)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@unique([day, currency])
+  @@map("daily_payment_snapshots")
+}
+
+model ReportRun {
+  id          String    @id @default(cuid())
+  status      String
+  fromDay     DateTime  @db.Date
+  toDay       DateTime  @db.Date
+  rowsWritten Int       @default(0)
+  error       String?
+  startedAt   DateTime  @default(now())
+  finishedAt  DateTime?
+
+  @@map("report_runs")
+  @@index([startedAt])
+}

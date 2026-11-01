@@ -32,6 +32,8 @@ env:
     value: http://notifications-service:4003
   - name: FEATURE_FLAGS_SERVICE_URL
     value: http://feature-flags-service:4004
+  - name: REPORTING_SERVICE_URL
+    value: http://reporting-service:4006
   - name: CORS_ORIGIN
     value: http://localhost:3000
   - name: JWT_SECRET

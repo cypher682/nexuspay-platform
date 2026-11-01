@@ -4,7 +4,7 @@ services:
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-nexuspay}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nexuspay}
-      POSTGRES_MULTIPLE_DATABASES: nexuspay_auth,nexuspay_payments,nexuspay_notifications,nexuspay_featureflags,nexuspay_fraud
+      POSTGRES_MULTIPLE_DATABASES: nexuspay_auth,nexuspay_payments,nexuspay_notifications,nexuspay_featureflags,nexuspay_fraud,nexuspay_reporting
     ports:
       - "5433:5432"
     volumes:
@@ -174,6 +174,26 @@ services:
       redis:
         condition: service_healthy
 
+  reporting-service:
+    build: ./services/reporting-service
+    env_file: ./.env
+    environment:
+      PORT: 4006
+      DATABASE_URL: postgresql://${POSTGRES_USER:-nexuspay}:${POSTGRES_PASSWORD:-nexuspay}@postgres:5432/nexuspay_reporting?schema=public
+      PAYMENTS_DATABASE_URL: postgresql://${POSTGRES_USER:-nexuspay}:${POSTGRES_PASSWORD:-nexuspay}@postgres:5432/nexuspay_payments?schema=public
+      OTEL_TRACES_ENDPOINT: http://jaeger:4318/v1/traces
+    expose:
+      - "4006"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4006/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   api-gateway:
     build: ./services/api-gateway
     env_file: ./.env
@@ -183,6 +203,7 @@ services:
       AUTH_SERVICE_URL: http://auth-service:4001
       PAYMENTS_SERVICE_URL: http://payments-service:4002
       NOTIFICATIONS_SERVICE_URL: http://notifications-service:4003
+      REPORTING_SERVICE_URL: http://reporting-service:4006
       FEATURE_FLAGS_SERVICE_URL: http://feature-flags-service:4004
       OTEL_TRACES_ENDPOINT: http://jaeger:4318/v1/traces
     ports:
