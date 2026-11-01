@@ -3,7 +3,7 @@
 # build; pin by digest later when enabling the Gatekeeper digest constraint.
 image:
   repository: ghcr.io/cypher682/nexuspay-api-gateway
-  digest: sha256:619af15b6044f4525cc890d8f153babb4ca6a4c34c663b13e0b6a692de8c1092
+  digest: sha256:ac46433aa2ab2da57452c5ed4f572b3c1a01981fe89584e155d3ff73d7f0f21e
   pullPolicy: IfNotPresent
 
 ingress:

@@ -1,0 +1,14 @@
+image:
+  repository: ghcr.io/cypher682/nexuspay-reporting-service
+  digest: sha256:b7b8f3cbd8eaf677d141d8cef4df2b6677b7054e0492052e8514296e9b78d876
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 300m
+    memory: 256Mi

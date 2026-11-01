@@ -1,0 +1,21 @@
+{{- include "nexuspay-lib.serviceAccount" . }}
+---
+{{- include "nexuspay-lib.deployment" . }}
+---
+{{- include "nexuspay-lib.service" . }}
+{{- if .Values.autoscaling.enabled }}
+---
+{{- include "nexuspay-lib.hpa" . }}
+{{- end }}
+{{- if .Values.podDisruptionBudget.enabled }}
+---
+{{- include "nexuspay-lib.pdb" . }}
+{{- end }}
+{{- if .Values.networkPolicy.enabled }}
+---
+{{- include "nexuspay-lib.networkpolicy" . }}
+{{- end }}
+{{- if .Values.serviceMonitor.enabled }}
+---
+{{- include "nexuspay-lib.servicemonitor" . }}
+{{- end }}
