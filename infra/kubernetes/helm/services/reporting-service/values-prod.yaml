@@ -1,6 +1,6 @@
 image:
   repository: ghcr.io/cypher682/nexuspay-reporting-service
-  digest: sha256:b7b8f3cbd8eaf677d141d8cef4df2b6677b7054e0492052e8514296e9b78d876
+  digest: sha256:ae79696fff1ee322f591da501f741baa8af7892e814044d8af4d30b00ffa6698
   pullPolicy: IfNotPresent
 
 replicaCount: 2
