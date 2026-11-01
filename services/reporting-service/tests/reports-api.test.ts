@@ -1,6 +1,7 @@
 import request from "supertest";
 import jwt from "jsonwebtoken";
 import { createApp } from "../src/app";
+import { queryPayments } from "../src/lib/payments-db";
 
 interface SnapshotRow {
   id: string;
@@ -114,10 +115,7 @@ jest.mock("../src/lib/payments-db", () => ({
   paymentsPool: { end: jest.fn() }
 }));
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const { queryPayments } = require("../src/lib/payments-db") as {
-  queryPayments: jest.Mock;
-};
+const mockedQueryPayments = queryPayments as unknown as jest.Mock;
 
 const app = createApp();
 const JWT_SECRET = "test-secret-value-at-least-32-chars";
@@ -133,7 +131,7 @@ function auth(scopes: string[]) {
 beforeEach(() => {
   state.snapshots.length = 0;
   state.runs.length = 0;
-  queryPayments.mockReset();
+  mockedQueryPayments.mockReset();
 });
 
 describe("reporting API", () => {
@@ -151,7 +149,7 @@ describe("reporting API", () => {
   });
 
   it("refreshes snapshots for an admin and records a successful run", async () => {
-    queryPayments.mockResolvedValueOnce([
+    mockedQueryPayments.mockResolvedValueOnce([
       {
         day: "2026-10-01",
         currency: "NGN",
@@ -213,7 +211,7 @@ describe("reporting API", () => {
   });
 
   it("marks the run failed when the payments query throws", async () => {
-    queryPayments.mockRejectedValueOnce(new Error("payments db down"));
+    mockedQueryPayments.mockRejectedValueOnce(new Error("payments db down"));
     const res = await request(app)
       .post("/v1/reports/refresh")
       .set(auth(["*"]))

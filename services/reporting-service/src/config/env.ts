@@ -27,6 +27,7 @@ const envSchema = z.object({
   JWT_SECRET: z.string().min(32),
   OLD_JWT_SECRETS: z.string().default(""),
   JWT_ALGORITHM: z.enum(["HS256", "HS384", "HS512"]).default("HS256"),
+  MFA_ISSUER: z.string().default("NexusPay"),
 
   INTERNAL_API_KEY: z.string().min(16),
   SNAPSHOT_DAYS: z.coerce.number().int().min(1).max(90).default(7),
