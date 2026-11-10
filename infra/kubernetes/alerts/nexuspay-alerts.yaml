@@ -84,6 +84,26 @@ spec:
           annotations:
             summary: "{{ $labels.service }} consuming 30-day error budget at >6x"
             description: "{{ $labels.service }} error budget burn rate is {{ printf \"%.1f\" $value }}x - budget will empty in under 5 days if sustained."
+        - alert: NexusPayReportingSnapshotStale
+          expr: |
+            time() - kube_cronjob_status_last_successful_time{namespace="nexuspay-prod", cronjob="reporting-service-snapshot"} > 93600
+          for: 15m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "No successful reporting snapshot in 26 hours"
+            description: "The reporting-service-snapshot CronJob has not completed successfully for over 26 hours. Check job history and the job logs before the daily aggregates go stale."
+        - alert: NexusPayReportingSnapshotFailed
+          expr: |
+            kube_job_failed{namespace="nexuspay-prod", job_name=~"reporting-service-snapshot-.*"} > 0
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Reporting snapshot job failed"
+            description: "Job {{ $labels.job_name }} has failed. Inspect `kubectl -n nexuspay-prod logs job/{{ $labels.job_name }}`; the previous snapshots remain valid until the next successful run."
         - alert: NexusPayTargetDown
           expr: up{namespace="nexuspay-prod"} == 0
           for: 1m

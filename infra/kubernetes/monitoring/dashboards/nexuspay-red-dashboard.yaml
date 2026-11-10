@@ -107,6 +107,43 @@ data:
               "legendFormat": "up"
             }
           ]
+        },
+        {
+          "id": 5,
+          "type": "stat",
+          "title": "Reporting rows written (24h)",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "fieldConfig": {
+            "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] } },
+            "overrides": []
+          },
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(increase(report_rows_written_total[24h]))",
+              "legendFormat": "rows"
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "type": "timeseries",
+          "title": "Report refreshes by status (24h)",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "fieldConfig": {
+            "defaults": { "unit": "short", "custom": { "fillOpacity": 10, "lineWidth": 2 } },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (status) (increase(report_refresh_total[24h]))",
+              "legendFormat": "{{status}}"
+            }
+          ]
         }
       ]
     }
