@@ -172,11 +172,8 @@ resource "oci_containerengine_cluster" "this" {
     service_lb_subnet_ids = [oci_core_subnet.lb.id]
 
     add_ons {
-      is_kubernetes_dashboard_enabled   = false
-      is_tiller_enabled                 = false
-      is_metrics_server_enabled         = true
-      is_cluster_autoscaler_enabled     = false
-      is_vulnerability_scanning_enabled = false
+      is_kubernetes_dashboard_enabled = false
+      is_tiller_enabled               = false
     }
   }
 
