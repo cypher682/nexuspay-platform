@@ -92,7 +92,7 @@ take this cluster down. They use metrics already scraped by `node-exporter` and
 
 | Signal | Expression (short) | Why it matters here |
 |---|---|---|
-| Root disk | `1 - avail/size{mountpoint="/"} > 0.85` | Images, container logs and the Prometheus TSDB share one 200 GB filesystem |
+| Root disk | `1 - avail/size{mountpoint="/"} > 0.85` | Images, container logs and the Prometheus TSDB share one 83 GB filesystem |
 | Node memory | `1 - MemAvailable/MemTotal > 0.90` | No second node to reschedule onto; OOM kills hit every pod at once |
 | Container restarts | `increase(kube_pod_container_status_restarts_total[30m]) > 2` | Catches CrashLoopBackOff before the deployment loses a replica |
 | Replica shortfall | `replicas_available < replicas_desired` | Surfaces unschedulable or failing pods that a `Running` count hides |
