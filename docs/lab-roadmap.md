@@ -249,7 +249,7 @@ reports are computed in the service, not by the database. Design and runbook:
 | 4C.1 | New service scaffold | Express + Prisma | ✅ Done |
 | 4C.2 | Snapshot tables (was: materialized views) | Postgres + Prisma upserts | ✅ Done |
 | 4C.3 | Scheduled refresh | Kubernetes CronJob, daily 02:15 UTC | ✅ Done |
-| 4C.4 | Revenue dashboard | Grafana panel | ❌ Deferred |
+| 4C.4 | Revenue dashboard | Grafana panel | ⚠️ Partial — rows/refresh panels added; revenue view still deferred |
 | 4C.5 | Export endpoints | JSON + CSV via gateway | ✅ Done |
 
 **Deliverables:**

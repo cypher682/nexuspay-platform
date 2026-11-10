@@ -91,6 +91,20 @@ sum(report_rows_written_total)     -> 3
 # 17/17 api-gateway + *-service targets up
 ```
 
+## Alerting
+
+Two Prometheus rules cover the CronJob (loaded 2026-11-10 via the
+`nexuspay-platform-alerts` app):
+
+- `NexusPayReportingSnapshotFailed` — `kube_job_failed` for a
+  `reporting-service-snapshot-*` job for 5m. Verified by creating a deliberately failing job:
+  the rule went to `pending`, and the job was deleted afterwards.
+- `NexusPayReportingSnapshotStale` — no `kube_cronjob_status_last_successful_time` update for
+  26h. The expression returns the current age; it fires only when the gap exceeds 26h.
+
+The RED dashboard also gained two reporting panels: rows written in the last 24h and refreshes
+by status.
+
 ## Runbook
 
 - **Backfill a gap:** `POST /v1/reports/refresh` with `from`/`to` (≤366 days); watch

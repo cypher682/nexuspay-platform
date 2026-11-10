@@ -50,6 +50,8 @@ the budget is exhausted.
 | `NexusPaySloCriticalBurn` | burn rate >14.4x on 1h (budget gone in <2 days) | page |
 | `NexusPaySloWarningBurn` | burn rate >6x on 5m (budget gone in <5 days) | warning |
 | `NexusPayTargetDown` | service unreachable for 1m | page |
+| `NexusPayReportingSnapshotStale` | no successful snapshot for 26h (k3s only) | warning |
+| `NexusPayReportingSnapshotFailed` | a snapshot job failed for 5m (k3s only) | warning |
 
 ## Alert routing (`infra/monitoring/alertmanager/alertmanager.yml`)
 
@@ -70,8 +72,9 @@ helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheu
 ```
 
 Verified 2026-11-01: 17/17 prod pods `up=1` via seven ServiceMonitors, 5 SLO
-recording rules + 6 alerting rules loaded, NexusPay RED dashboard delivered as a
-GitOps ConfigMap, and an injected test alert delivered to Mailpit. Prometheus,
+recording rules + 8 alerting rules loaded (two are k3s-only snapshot checks added
+2026-11-10), NexusPay RED dashboard delivered as a GitOps ConfigMap with six panels
+including reporting activity, and an injected test alert delivered to Mailpit. Prometheus,
 Grafana and Alertmanager are ClusterIP-only; port-forward to reach them.
 
 ## Try it

@@ -20,6 +20,7 @@ A single place to separate what has been proven from what has only been written.
 | Migrations as PreSync Jobs | Verified live | `reporting-service` migrated `reporting-db` on sync |
 | Feature flags, fraud gate, reporting | Verified live | E2E flows and Prometheus counters captured |
 | Nightly reporting CronJob | Verified live | Manual trigger wrote 3 rows through `dist/jobs/snapshot.js` |
+| Snapshot failure/staleness alerts | Verified live | Rules loaded; a simulated failed job reached `pending`; staleness expression returns a valid age |
 | Prometheus + Grafana + alerts | Verified live | 17/17 targets, dashboard ConfigMap, Mailpit alert delivery |
 | Distributed tracing backend | Absent on k3s | OTel SDK wired but disabled; Jaeger only exists in Compose |
 | Loki log aggregation on k3s | Absent | Compose only |
