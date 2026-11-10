@@ -52,6 +52,11 @@ the budget is exhausted.
 | `NexusPayTargetDown` | service unreachable for 1m | page |
 | `NexusPayReportingSnapshotStale` | no successful snapshot for 26h (k3s only) | warning |
 | `NexusPayReportingSnapshotFailed` | a snapshot job failed for 5m (k3s only) | warning |
+| `NexusPayNodeDiskFilling` | root filesystem >85% used for 15m (k3s only) | warning |
+| `NexusPayNodeMemoryLow` | >90% node memory used for 10m (k3s only) | warning |
+| `NexusPayPodRestarting` | >2 container restarts in 30m (k3s only) | warning |
+| `NexusPayReplicasUnavailable` | available replicas below desired for 10m (k3s only) | warning |
+| `NexusPayPvcPending` | a PVC stays Pending for 15m (k3s only) | warning |
 
 ## Alert routing (`infra/monitoring/alertmanager/alertmanager.yml`)
 
@@ -72,10 +77,37 @@ helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheu
 ```
 
 Verified 2026-11-01: 17/17 prod pods `up=1` via seven ServiceMonitors, 5 SLO
-recording rules + 8 alerting rules loaded (two are k3s-only snapshot checks added
-2026-11-10), NexusPay RED dashboard delivered as a GitOps ConfigMap with six panels
-including reporting activity, and an injected test alert delivered to Mailpit. Prometheus,
+recording rules + 13 alerting rules loaded (two snapshot checks added 2026-11-10 and
+five bare-metal host/workload signals added 2026-11-10), NexusPay RED dashboard delivered
+as a GitOps ConfigMap with nine panels including reporting activity and host capacity, and
+an injected test alert delivered to Mailpit. Prometheus,
 Grafana and Alertmanager are ClusterIP-only; port-forward to reach them.
+
+### Bare-metal signals
+
+On a single node there is no cloud autoscaler, managed disk or second host to absorb a
+failure, so the five `NexusPay*` host/workload alerts above watch the things that actually
+take this cluster down. They use metrics already scraped by `node-exporter` and
+`kube-state-metrics`; no new exporter, controller or workload was added.
+
+| Signal | Expression (short) | Why it matters here |
+|---|---|---|
+| Root disk | `1 - avail/size{mountpoint="/"} > 0.85` | Images, container logs and the Prometheus TSDB share one 200 GB filesystem |
+| Node memory | `1 - MemAvailable/MemTotal > 0.90` | No second node to reschedule onto; OOM kills hit every pod at once |
+| Container restarts | `increase(kube_pod_container_status_restarts_total[30m]) > 2` | Catches CrashLoopBackOff before the deployment loses a replica |
+| Replica shortfall | `replicas_available < replicas_desired` | Surfaces unschedulable or failing pods that a `Running` count hides |
+| Pending PVC | `kube_persistentvolumeclaim_status_phase{phase="Pending"} == 1` | `local-path` is the only provisioner; an unbound claim blocks its pod forever |
+
+Baselines captured on 2026-11-10, all below threshold: root disk 35.3% used, node memory
+35.3% used, zero restarts in 30 minutes, every deployment at its desired replica count, and
+all 12 PVCs `Bound`. Each rule evaluates `inactive`, with `for` durations (10-15m) chosen to
+ignore image pulls and rolling restarts.
+
+Deliberately not covered yet: certificate expiry and node readiness. cert-manager exposes
+`certmanager_certificate_expiration_timestamp_seconds`, but the Prometheus instance does not
+scrape the `cert-manager` namespace yet, so there is no series to alert on. Adding a
+ServiceMonitor (and a probe for the public endpoint) is the next step, not a claim in this
+document.
 
 ## Try it
 

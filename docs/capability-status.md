@@ -22,6 +22,7 @@ A single place to separate what has been proven from what has only been written.
 | Nightly reporting CronJob | Verified live | Manual trigger wrote 3 rows through `dist/jobs/snapshot.js` |
 | Snapshot failure/staleness alerts | Verified live | Rules loaded; a simulated failed job reached `pending`; staleness expression returns a valid age |
 | Prometheus + Grafana + alerts | Verified live | 17/17 targets, dashboard ConfigMap, Mailpit alert delivery |
+| Bare-metal host/workload signals | Verified live | 5 rules loaded: disk >85%, memory >90%, restart loop, replica shortfall, Pending PVC; baselines below threshold |
 | Distributed tracing backend | Absent on k3s | OTel SDK wired but disabled; Jaeger only exists in Compose |
 | Loki log aggregation on k3s | Absent | Compose only |
 | Customer web UI | Absent | Swagger UI at `/docs` is the only browser surface |
