@@ -1,0 +1,13 @@
+# Local Terraform state and provider cache
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+
+# Real variable files are environment-specific and may hold identifiers
+terraform.tfvars
+*.auto.tfvars
+override.tf
+override.tf.json

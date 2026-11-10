@@ -1,0 +1,9 @@
+# Copy to terraform.tfvars (gitignored) and fill in real values.
+# OKE Basic has no control-plane fee; the worker nodes consume A1.Flex capacity.
+compartment_ocid   = "ocid1.compartment.oc1..replace-me"
+node_image_id      = "ocid1.image.oc1..replace-me"
+oci_config_profile = "DEFAULT"
+region             = "eu-frankfurt-1"
+kubernetes_version = "v1.31.1"
+node_count         = 1
+api_allowed_cidr   = "203.0.113.10/32"

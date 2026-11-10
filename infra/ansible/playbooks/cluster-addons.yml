@@ -1,0 +1,6 @@
+---
+- name: Install platform addons on an existing Kubernetes cluster
+  hosts: local
+  gather_facts: false
+  roles:
+    - addons

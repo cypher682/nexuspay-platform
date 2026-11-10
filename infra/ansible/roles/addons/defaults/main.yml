@@ -1,0 +1,9 @@
+---
+addons_cert_manager_version: v1.21.3
+addons_cert_manager_namespace: cert-manager
+
+addons_argocd_namespace: argocd
+addons_argocd_chart_version: ""
+
+addons_gatekeeper_namespace: gatekeeper-system
+addons_gatekeeper_chart_version: ""

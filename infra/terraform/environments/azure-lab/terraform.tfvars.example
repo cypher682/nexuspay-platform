@@ -1,0 +1,7 @@
+# Copy to terraform.tfvars (gitignored) and fill in real values.
+# Authentication: ARM_SUBSCRIPTION_ID / ARM_TENANT_ID / ARM_CLIENT_ID / ARM_CLIENT_SECRET,
+# or `az login` for local use. AKS Free tier has no control-plane fee.
+location           = "westeurope"
+vm_size            = "Standard_B2pls_v2"
+node_count         = 2
+kubernetes_version = null

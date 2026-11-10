@@ -1,0 +1,87 @@
+---
+- name: Check that kubectl and helm are installed
+  ansible.builtin.command: "{{ item }}"
+  loop:
+    - kubectl version --client=true
+    - helm version --short
+  changed_when: false
+
+- name: Add Helm chart repositories
+  ansible.builtin.command: helm repo add {{ item.name }} {{ item.url }} --force-update
+  loop:
+    - name: jetstack
+      url: https://charts.jetstack.io
+    - name: argo
+      url: https://argoproj.github.io/argo-helm
+    - name: gatekeeper
+      url: https://open-policy-agent.github.io/gatekeeper/charts
+  changed_when: false
+
+- name: Refresh the Helm repository index
+  ansible.builtin.command: helm repo update
+  changed_when: false
+
+- name: Install cert-manager
+  ansible.builtin.command:
+    argv:
+      - helm
+      - upgrade
+      - --install
+      - cert-manager
+      - jetstack/cert-manager
+      - --namespace
+      - "{{ addons_cert_manager_namespace }}"
+      - --create-namespace
+      - --set
+      - crds.enabled=true
+      - --version
+      - "{{ addons_cert_manager_version }}"
+      - --wait
+      - --timeout
+      - 10m
+  changed_when: true
+
+- name: Wait for the cert-manager webhook
+  ansible.builtin.command: >-
+    kubectl -n {{ addons_cert_manager_namespace }} rollout status
+    deployment/cert-manager-webhook --timeout=300s
+  changed_when: false
+
+- name: Install ArgoCD
+  ansible.builtin.command: >-
+    helm upgrade --install argocd argo/argo-cd
+    --namespace {{ addons_argocd_namespace }} --create-namespace
+    --set server.service.type=ClusterIP {{ argocd_version_arg }}
+    --wait --timeout 15m
+  vars:
+    argocd_version_arg: "{{ ('--version ' + addons_argocd_chart_version) if (addons_argocd_chart_version | length > 0) else '' }}"
+  changed_when: true
+
+- name: Wait for the ArgoCD server
+  ansible.builtin.command: >-
+    kubectl -n {{ addons_argocd_namespace }} rollout status
+    deployment/argocd-server --timeout=600s
+  changed_when: false
+
+- name: Install Gatekeeper
+  ansible.builtin.command: >-
+    helm upgrade --install gatekeeper gatekeeper/gatekeeper
+    --namespace {{ addons_gatekeeper_namespace }} --create-namespace
+    {{ gatekeeper_version_arg }}
+    --wait --timeout 10m
+  vars:
+    gatekeeper_version_arg: "{{ ('--version ' + addons_gatekeeper_chart_version) if (addons_gatekeeper_chart_version | length > 0) else '' }}"
+  changed_when: true
+
+- name: Wait for the Gatekeeper controller manager
+  ansible.builtin.command: >-
+    kubectl -n {{ addons_gatekeeper_namespace }} rollout status
+    deployment/gatekeeper-controller-manager --timeout=600s
+  changed_when: false
+
+- name: Report the next step
+  ansible.builtin.debug:
+    msg:
+      - "Addons are installed in the cluster referenced by the current kubeconfig."
+      - "Next: review infra/kubernetes/argocd/project.yaml and applicationset.yaml, then apply them."
+      - "Secrets are not managed here; create them per docs/k3s-gitops-deployment.md before expecting workloads to become Ready."

@@ -1,27 +1,26 @@
-# infra/ — Kubernetes + Terraform
+# infra/ — Kubernetes, Terraform and Ansible
 
-## kubernetes/ (built — see kubernetes/README.md)
+## kubernetes/ (live)
 
-- `helm/nexuspay-lib` + `helm/services/*` — library chart and the four service
-  charts with dev/prod overlays (HPA, PDB, NetworkPolicy, ServiceMonitor)
-- `argocd/` — AppProject + ApplicationSet driving both environments
-- `policies/` — Gatekeeper admission guardrails for prod
-- `data/`, `scripts/` — datastore install guide and secrets bootstrap
+- `helm/nexuspay-lib` + `helm/services/*` — library chart and seven service charts, prod
+  overlays with digest pins, PDBs, NetworkPolicies and ServiceMonitors
+- `argocd/` — AppProject + ApplicationSet (auto-sync, self-heal) and platform apps
+- `policies/` — Gatekeeper constraints and templates
+- `network-policies/` — default-deny plus per-service egress
+- `data/`, `scripts/` — datastore install notes and secrets bootstrap
 
-Remaining in this layer: kube-prometheus-stack dashboards-as-code, Istio mTLS.
+This is the path that actually deploys: ArgoCD reconciles `main` onto the k3s cluster.
+See `docs/k3s-gitops-deployment.md`.
 
-## terraform/ (AKS sprint — not started)
+## terraform/ (scaffold, never applied)
 
-Populated only after the minikube GitOps loop is proven ($0), then destroyed
-after evidence capture (~$40–50 Azure credit):
+Managed Kubernetes on OKE, EKS and AKS with arm64 node pools, one root module per cloud.
+CI runs `fmt`, `init -backend=false` and `validate`; no state or credentials exist in the repo.
+Start with `terraform/README.md`.
 
-```
-terraform/
-├── modules/          # vnet, aks, acr, postgres, keyvault
-└── environments/
-    ├── dev/
-    └── prod/
-```
+## ansible/ (scaffold, never run)
 
-Order: VNET → ACR → Key Vault → PostgreSQL Flexible → AKS. The ACR name from
-Terraform output replaces `acrname.azurecr.io` placeholders in values-prod.yaml.
+Installs cert-manager, ArgoCD and Gatekeeper on an existing cluster via Helm. CI runs
+`ansible-lint` and `--syntax-check`. Start with `ansible/README.md`.
+
+Status of everything in this directory: [`../docs/capability-status.md`](../docs/capability-status.md).

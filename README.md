@@ -140,6 +140,8 @@ Checked against the live cluster on 2026-11-01, not just unit tests:
 ```
 services/                 # 7 services, one directory each
 infra/kubernetes/         # helm/ (library + charts), argocd/, policies/, network-policies/, scripts/
+infra/terraform/          # OKE/EKS/AKS modules and env roots (CI-validated, never applied)
+infra/ansible/            # cert-manager, ArgoCD and Gatekeeper addon playbook (CI-linted, never run)
 infra/monitoring/         # Compose-era Prometheus/Grafana/Loki/Jaeger config
 k6/                       # smoke and load scenarios
 scripts/                  # OpenAPI drift validation, test-user seed
@@ -161,6 +163,8 @@ docker-compose.yml        # local stack: data layer + 7 services + observability
 | [fraud-service.md](docs/fraud-service.md) | Rules engine, scoring, payment gate |
 | [reporting-service.md](docs/reporting-service.md) | Snapshot model, report API, CronJob runbook |
 | [k6-load-testing.md](docs/k6-load-testing.md) | Scenarios, thresholds, findings |
+| [iac-terraform-ansible.md](docs/iac-terraform-ansible.md) | Managed-cluster Terraform and Ansible scaffold, gaps and costs |
+| [capability-status.md](docs/capability-status.md) | Verified live vs CI-validated vs absent |
 | [lab-roadmap.md](docs/lab-roadmap.md) | What is shipped, scaffolded, or deferred |
 
 ## Security notes

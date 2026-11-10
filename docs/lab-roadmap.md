@@ -258,6 +258,27 @@ reports are computed in the service, not by the database. Design and runbook:
 - Feature flags toggling behavior live ✅
 - Revenue dashboard in Grafana — deferred; snapshots are exposed as JSON/CSV and refresh metrics feed the RED board
 
+### 4D. Portable infrastructure scaffold
+
+**Status: written and CI-validated, never applied (2026-11-10).** Managed Kubernetes modules
+for OKE, EKS and AKS plus an Ansible addon playbook. No cloud resource was created, and the
+live cluster was not provisioned this way. Design and gaps:
+[iac-terraform-ansible.md](iac-terraform-ansible.md).
+
+| # | What | Tool | Status |
+|---|------|------|--------|
+| 4D.1 | OKE module (VCN + Basic cluster + A1.Flex pool) | Terraform | ✅ CI-validated |
+| 4D.2 | EKS module (VPC + managed node group) | Terraform | ✅ CI-validated |
+| 4D.3 | AKS module (VNet + Free tier pool) | Terraform | ✅ CI-validated |
+| 4D.4 | Addon playbook (cert-manager, ArgoCD, Gatekeeper) | Ansible | ✅ CI-linted, unrun |
+| 4D.5 | Remote state + plan in CI | Terraform | ❌ Absent |
+| 4D.6 | Execute a plan on a real cloud account | Terraform | ❌ Not attempted (cost) |
+
+**Deliverables:**
+- Three env roots that pass `fmt`, `init -backend=false` and `validate` in CI
+- A linted playbook that installs cluster addons without touching nodes
+- Explicit status of every capability: [capability-status.md](capability-status.md)
+
 ---
 
 ## Phase 5 — Chaos Engineering + Resilience
