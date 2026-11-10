@@ -113,3 +113,65 @@ spec:
           annotations:
             summary: "{{ $labels.service }} is down"
             description: "Prometheus cannot scrape {{ $labels.instance }} - unreachable for over a minute."
+
+    # Host and workload signals that matter on a single bare-metal node.
+    # These use metrics already scraped by kube-prometheus-stack; no new
+    # exporters, controllers or workloads are involved.
+    - name: nexuspay-bare-metal-signals
+      interval: 30s
+      rules:
+        - alert: NexusPayNodeDiskFilling
+          expr: |
+            1 - node_filesystem_avail_bytes{mountpoint="/", fstype!~"tmpfs|overlay|squashfs|ramfs|fuse.lxcfs"}
+              / node_filesystem_size_bytes{mountpoint="/", fstype!~"tmpfs|overlay|squashfs|ramfs|fuse.lxcfs"} > 0.85
+          for: 15m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Root filesystem is {{ $value | humanizePercentage }} full"
+            description: "The single k3s node has less than 15% free on {{ $labels.mountpoint }} ({{ $labels.device }}). Images, container logs and Prometheus TSDB all share this disk; prune images or extend the volume before it reaches 100%."
+        - alert: NexusPayNodeMemoryLow
+          expr: |
+            1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes > 0.90
+          for: 10m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Node memory usage above 90%"
+            description: "Available memory is {{ $value | humanizePercentage }} used. There is no second node to reschedule onto; identify the largest consumer with `kubectl top pods -A` before the kernel starts reclaiming."
+        - alert: NexusPayPodRestarting
+          expr: |
+            sum by (namespace, pod, container) (
+              increase(kube_pod_container_status_restarts_total{namespace="nexuspay-prod"}[30m])
+            ) > 2
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "{{ $labels.container }} in {{ $labels.pod }} restarted repeatedly"
+            description: "The container restarted {{ $value }} times in 30 minutes. Check `kubectl -n {{ $labels.namespace }} describe pod/{{ $labels.pod }}` for the exit code, last state and events."
+        - alert: NexusPayReplicasUnavailable
+          expr: |
+            kube_deployment_status_replicas_available{namespace="nexuspay-prod"}
+              < kube_deployment_spec_replicas{namespace="nexuspay-prod"}
+          for: 10m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "{{ $labels.deployment }} is below its desired replica count"
+            description: "{{ $labels.deployment }} has {{ $value }} unavailable replicas for more than 10 minutes. Check scheduling, probes and image pulls with `kubectl -n {{ $labels.namespace }} get pods -l app.kubernetes.io/name={{ $labels.deployment }}`."
+        - alert: NexusPayPvcPending
+          expr: |
+            kube_persistentvolumeclaim_status_phase{namespace="nexuspay-prod", phase="Pending"} == 1
+          for: 15m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "PVC {{ $labels.persistentvolumeclaim }} is still Pending"
+            description: "The local-path provisioner has not bound this claim for 15 minutes. A pod that needs it will stay Pending; check provisioner logs and free disk on the node."
+
